@@ -1,0 +1,19 @@
+{
+  "name": "hisab-naki",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "prisma:generate": "npx prisma generate --schema prisma/schema.prisma",
+    "prisma:push": "npx prisma db push --schema prisma/schema.prisma",
+    "prisma:seed": "npx tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2"
+  }
+}
