@@ -1,4 +1,5 @@
 import { Check, Mic, ScanText } from 'lucide-react';
+import { ScrollReveal } from '@/components/ui/scroll-reveal';
 import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
 
 const steps = [
@@ -33,14 +34,14 @@ export function ProductDemo() {
           </SectionDescription>
         </SectionHeader>
 
-        <div className="relative grid gap-8 lg:grid-cols-3 lg:gap-10">
+        <ScrollReveal className="reveal-stagger relative grid gap-8 lg:grid-cols-3 lg:gap-10">
           <div aria-hidden="true" className="absolute left-[16.67%] right-[16.67%] top-5 hidden h-px bg-forest/25 lg:block" />
           {steps.map((step) => {
             const Icon = step.icon;
 
             return (
-              <article key={step.number} className="relative grid grid-cols-[2.5rem_1fr] gap-x-4 lg:block">
-                <div className="relative z-10 flex h-10 w-10 items-center justify-center bg-purple text-sm font-semibold text-forest-dark">
+              <article key={step.number} className="process-step relative grid grid-cols-[2.5rem_1fr] gap-x-4 lg:block">
+                <div className="process-step__number relative z-10 flex h-10 w-10 items-center justify-center bg-purple text-sm font-semibold text-forest-dark">
                   {step.number}
                 </div>
                 <div className="pb-2 pt-1 lg:mt-6 lg:pt-0">
@@ -54,7 +55,7 @@ export function ProductDemo() {
               </article>
             );
           })}
-        </div>
+        </ScrollReveal>
       </div>
     </Section>
   );

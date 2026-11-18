@@ -18,7 +18,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97]';
+  'inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:transform-none hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]';
 
 const variants: Record<Variant, string> = {
   default: 'bg-purple text-forest-dark shadow-sm hover:bg-beige',
@@ -30,10 +30,10 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  default: 'h-10 px-4 py-2',
-  sm: 'h-9 rounded-sm px-3',
-  lg: 'h-11 rounded-md px-8',
-  icon: 'h-10 w-10',
+  default: 'h-11 px-4 py-2',
+  sm: 'h-11 rounded-sm px-3',
+  lg: 'h-11 rounded-sm px-8',
+  icon: 'h-11 w-11',
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(

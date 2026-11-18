@@ -13,7 +13,7 @@ const balances = [
 export function ProblemSolution() {
   return (
     <Section id="problem-solution" padding="lg" bg="forest" className="text-beige">
-      <div className="site-container grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+      <ScrollReveal className="site-container grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
         <div className="max-w-xl">
           <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-beige">The cost of a missed entry</p>
           <h2 className="mb-6 font-serif text-3xl font-semibold leading-tight tracking-tight text-beige text-balance sm:text-4xl">
@@ -29,8 +29,8 @@ export function ProblemSolution() {
           </div>
         </div>
 
-        <ScrollReveal delay={0.08} className="min-w-0">
-          <div className="border border-beige/20 bg-beige p-5 text-forest sm:p-7">
+        <div className="min-w-0">
+          <div className="surface-panel border border-beige/20 bg-beige p-5 text-forest sm:p-7">
             <div className="flex flex-wrap items-end justify-between gap-4 border-b border-forest/20 pb-5">
               <div>
                 <div className="mb-3 flex items-center gap-2 text-muted">
@@ -68,8 +68,8 @@ export function ProblemSolution() {
               Each balance is the sum of confirmed entries—not an estimate.
             </p>
           </div>
-        </ScrollReveal>
-      </div>
+        </div>
+      </ScrollReveal>
     </Section>
   );
 }

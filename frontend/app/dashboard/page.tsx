@@ -6,6 +6,7 @@ import { Mic, MicOff, X, Clock, TrendingUp, CreditCard, Users, DollarSign } from
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
+import { VoiceWaveform } from '@/components/ui/voice-waveform';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -102,6 +103,16 @@ export default function DashboardPage() {
     loadDashboard();
     loadCustomers();
     loadTransactions();
+  }, []);
+
+  useEffect(() => () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.abort();
+      recognitionRef.current = null;
+    }
   }, []);
 
   const speak = (text: string) => {
@@ -272,7 +283,7 @@ export default function DashboardPage() {
       };
 
       recognition.onend = () => {
-        setVoiceStatus('idle');
+        setVoiceStatus((status) => (status === 'listening' ? 'idle' : status));
       };
 
       recognitionRef.current = recognition;
@@ -312,8 +323,25 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-forest tracking-tight">{summary?.businessName || 'My Shop'}</h1>
           <p className="mt-1 text-sm text-forest/60">Voice-first digital ledger</p>
         </div>
-        <Button onClick={startListening} className="ml-auto lg:ml-0">
-          {voiceStatus === 'listening' ? <MicOff className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
+        <Button
+          onClick={() => {
+            if (voiceStatus === 'listening') {
+              recognitionRef.current?.stop();
+            } else if (voiceStatus === 'idle') {
+              startListening();
+            }
+          }}
+          aria-pressed={voiceStatus === 'listening'}
+          disabled={voiceStatus === 'processing'}
+          className="ml-auto lg:ml-0"
+        >
+          <span className="mic-motion mr-2 flex h-7 w-7 items-center justify-center">
+            {voiceStatus === 'listening' ? (
+              <MicOff aria-hidden="true" className="h-5 w-5" />
+            ) : (
+              <Mic aria-hidden="true" className="h-5 w-5" />
+            )}
+          </span>
           {voiceStatus === 'listening' ? 'Stop listening' : voiceStatus === 'processing' ? 'Processing…' : 'Start voice'}
         </Button>
       </div>
@@ -337,13 +365,14 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="space-y-6">
-          <ScrollReveal className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`h-3 w-3 rounded-full ${voiceStatus === 'listening' ? 'bg-purple animate-pulse' : 'bg-forest/10'}`} />
-              <h2 className="text-xl font-semibold text-forest">
+          <ScrollReveal className="rounded-md border border-forest/10 bg-white p-6 shadow-soft">
+            <div className="mb-4 flex items-center gap-3">
+              <div className={`recording-indicator ${voiceStatus === 'listening' ? 'is-live' : ''}`} />
+              <h2 aria-live="polite" aria-atomic="true" className="text-xl font-semibold text-forest">
                 {voiceStatus === 'listening' ? 'Listening…' : voiceStatus === 'processing' ? 'Understanding…' : 'Voice input'}
               </h2>
             </div>
+            {voiceStatus === 'listening' && <VoiceWaveform className="my-4" />}
             {lastTranscript && (
               <div className="mb-4 p-3 rounded-lg border border-forest/10 bg-beige">
                 <p className="text-xs uppercase tracking-wider text-forest/40">Transcript</p>

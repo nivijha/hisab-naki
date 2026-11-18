@@ -1,4 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, Check, Mic } from 'lucide-react';
+import { ScrollReveal } from '@/components/ui/scroll-reveal';
 import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
 
 const ledgerRows = [
@@ -36,8 +37,8 @@ export function Features() {
           </SectionDescription>
         </SectionHeader>
 
-        <div className="grid items-start gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
-          <div className="min-w-0 border border-forest/20 bg-beige-light p-5 sm:p-7">
+        <ScrollReveal className="grid items-start gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+          <div className="surface-panel min-w-0 rounded-sm border border-forest/20 bg-beige-light p-5 sm:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-forest/20 pb-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Daily ledger</p>
@@ -86,7 +87,9 @@ export function Features() {
 
             <div className="bg-purple p-4 text-forest-dark sm:flex sm:items-center sm:justify-between sm:gap-4">
               <div className="flex min-w-0 gap-3">
-                <Mic aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="mic-motion mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
+                  <Mic aria-hidden="true" className="h-4 w-4" />
+                </span>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.1em]">Voice entry · review first</p>
                   <p className="mt-1 text-sm leading-5">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
@@ -112,7 +115,7 @@ export function Features() {
               </article>
             ))}
           </div>
-        </div>
+        </ScrollReveal>
       </div>
     </Section>
   );

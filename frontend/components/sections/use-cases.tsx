@@ -1,4 +1,5 @@
 import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
+import { ScrollReveal } from '@/components/ui/scroll-reveal';
 
 const useCases = [
   {
@@ -29,15 +30,15 @@ export function UseCases() {
           </SectionDescription>
         </SectionHeader>
 
-        <div className="grid gap-8 md:grid-cols-3 md:gap-10">
+        <ScrollReveal className="reveal-stagger grid gap-8 md:grid-cols-3 md:gap-10">
           {useCases.map((item) => (
-            <article key={item.number} className="min-h-full border-t-2 border-forest/30 pt-5">
+            <article key={item.number} className="use-case min-h-full border-t-2 border-forest/30 pt-5">
               <p className="mb-5 text-xs font-semibold tracking-[0.12em] text-muted">{item.number}</p>
               <h3 className="font-serif text-xl font-semibold leading-snug tracking-tight text-forest">{item.title}</h3>
               <p className="mt-3 max-w-sm text-sm leading-6 text-muted sm:text-base">{item.body}</p>
             </article>
           ))}
-        </div>
+        </ScrollReveal>
       </div>
     </Section>
   );

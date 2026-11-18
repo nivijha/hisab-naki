@@ -14,7 +14,7 @@ export function Footer() {
         <div className="grid gap-10 border-b border-beige/25 pb-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr] lg:gap-12">
           <div className="max-w-xs">
             <Link href="/" className="inline-flex min-h-11 items-center gap-3" aria-label="HisabNaki home">
-              <span className="flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
+              <span className="mic-motion flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
                 <Mic aria-hidden="true" className="h-[18px] w-[18px]" />
               </span>
               <span className="text-lg font-semibold tracking-tight">HisabNaki</span>

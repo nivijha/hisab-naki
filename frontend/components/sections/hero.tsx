@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowDownRight, ArrowUpRight, Mic, MoveRight } from 'lucide-react';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
+import { VoiceWaveform } from '@/components/ui/voice-waveform';
 
 export function Hero() {
   return (
@@ -26,24 +27,24 @@ export function Hero() {
             <ScrollReveal delay={0.2} className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
               <Link
                 href="/dashboard"
-                className="inline-flex min-h-12 items-center gap-3 bg-purple px-5 text-sm font-semibold text-forest-dark transition-colors hover:bg-beige focus-visible:outline-offset-4"
+                className="motion-interactive inline-flex min-h-12 items-center gap-3 rounded-sm bg-purple px-5 text-sm font-semibold text-forest-dark hover:bg-beige focus-visible:outline-offset-4"
               >
-                Open your ledger <MoveRight aria-hidden="true" className="h-4 w-4" />
+                Open your ledger <MoveRight aria-hidden="true" className="arrow-motion h-4 w-4" />
               </Link>
-              <Link href="#how-it-works" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-beige underline decoration-beige/50 underline-offset-4 transition-colors hover:decoration-beige">
-                See how it works <ArrowDownRight aria-hidden="true" className="h-4 w-4" />
+              <Link href="#how-it-works" className="motion-interactive inline-flex min-h-11 items-center gap-2 text-sm font-medium text-beige underline decoration-beige/50 underline-offset-4 transition-colors hover:decoration-beige">
+                See how it works <ArrowDownRight aria-hidden="true" className="arrow-motion h-4 w-4" />
               </Link>
             </ScrollReveal>
           </div>
 
           <ScrollReveal delay={0.15} className="min-w-0">
-            <div className="border border-beige/20 bg-beige p-4 text-forest shadow-forest sm:p-6">
+            <div className="surface-panel border border-beige/20 bg-beige p-4 text-forest sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-forest/15 pb-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted">NAMASTE STORES</p>
                   <p className="mt-1 text-sm font-medium">Today, 18 November</p>
                 </div>
-                <Link href="/dashboard" className="inline-flex min-h-10 items-center gap-2 border border-forest/20 px-3 text-xs font-semibold text-forest transition-colors hover:bg-purple hover:text-forest-dark">
+                <Link href="/dashboard" className="motion-interactive inline-flex min-h-10 items-center gap-2 rounded-sm border border-forest/20 px-3 text-xs font-semibold text-forest hover:bg-purple hover:text-forest-dark">
                   View ledger <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
                 </Link>
               </div>
@@ -63,24 +64,33 @@ export function Hero() {
                 </div>
               </div>
 
-              <div className="border border-forest/15 bg-beige-light p-4 sm:p-5">
+              <div className="rounded-sm border border-forest/15 bg-beige-light p-4 sm:p-5">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">VOICE ENTRY · NEEDS CONFIRMATION</p>
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-purple text-forest-dark">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">SAMPLE VOICE ENTRY · NEEDS CONFIRMATION</p>
+                  <span className="mic-motion flex h-8 w-8 shrink-0 items-center justify-center bg-purple text-forest-dark">
                     <Mic aria-hidden="true" className="h-4 w-4" />
                   </span>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-forest">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
+                <div className="my-4">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Decorative sample · not recording</p>
+                  <VoiceWaveform />
+                </div>
+                <p className="voice-demo__transcript mt-3 border-l-2 border-forest/20 pl-3 text-sm leading-6 text-forest">
+                  “Raju ko 450 rupaye ka samaan udhaar diya.”
+                </p>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-forest/15 pt-4">
-                  <div>
-                    <p className="text-xs text-muted">Add credit to Raju</p>
-                    <p className="mt-1 text-xl font-semibold">₹450</p>
+                  <div className="voice-demo__interpretation">
+                    <p className="text-xs text-muted">Customer: Raju</p>
+                    <p className="mt-1 font-semibold">
+                      <span className="text-xs font-medium text-muted">Amount:</span>{' '}
+                      <span className="text-xl">₹450</span>
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-forest">
                       <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" /> Credit
                     </span>
-                    <span className="bg-forest px-3 py-2 text-xs font-semibold text-beige">Confirm</span>
+                    <span className="voice-demo__confirmation bg-forest px-3 py-2 text-xs font-semibold text-beige">Confirm</span>
                   </div>
                 </div>
               </div>

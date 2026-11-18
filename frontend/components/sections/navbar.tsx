@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Menu, Mic, X } from 'lucide-react';
 
@@ -12,13 +12,43 @@ const navLinks = [
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [activeHref, setActiveHref] = useState('');
+
+  useEffect(() => {
+    const sections = navLinks
+      .map(({ href }) => document.getElementById(href.slice(1)))
+      .filter((section): section is HTMLElement => section !== null);
+    if (!sections.length || !('IntersectionObserver' in window)) {
+      return;
+    }
+
+    const visibleSections = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            visibleSections.set(entry.target.id, entry.intersectionRatio);
+          } else {
+            visibleSections.delete(entry.target.id);
+          }
+        });
+
+        const activeSection = Array.from(visibleSections.entries()).sort((a, b) => b[1] - a[1])[0];
+        setActiveHref(activeSection ? `#${activeSection[0]}` : '');
+      },
+      { rootMargin: '-72px 0px -45% 0px', threshold: 0.01 },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <nav aria-label="Main navigation" className="fixed inset-x-0 top-0 z-50 border-b border-beige/15 bg-forest">
       <div className="site-container">
         <div className="flex h-[72px] items-center justify-between">
           <Link href="/" className="flex items-center gap-3 text-beige" aria-label="HisabNaki home">
-            <span className="flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
+            <span className="mic-motion flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
               <Mic aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={2} />
             </span>
             <span className="font-semibold tracking-tight">HisabNaki</span>
@@ -29,14 +59,15 @@ export function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="min-h-11 content-center text-sm font-medium text-beige transition-colors hover:text-white focus-visible:outline-offset-4"
+                aria-current={activeHref === link.href ? 'location' : undefined}
+                className="min-h-11 content-center border-b-2 border-transparent text-sm font-medium text-beige transition-[color,border-color] hover:border-purple hover:text-white aria-[current=location]:border-purple aria-[current=location]:text-white focus-visible:outline-offset-4"
               >
                 {link.label}
               </Link>
             ))}
             <Link
               href="/dashboard"
-              className="inline-flex min-h-11 items-center gap-2 bg-purple px-5 text-sm font-semibold text-forest-dark transition-colors hover:bg-beige focus-visible:outline-offset-4"
+              className="motion-interactive inline-flex min-h-11 items-center gap-2 rounded-sm bg-purple px-5 text-sm font-semibold text-forest-dark hover:bg-beige focus-visible:outline-offset-4"
             >
               Open ledger
             </Link>
@@ -70,7 +101,8 @@ export function Navbar() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="flex min-h-12 items-center border-b border-beige/15 text-sm font-medium text-beige"
+                  aria-current={activeHref === link.href ? 'location' : undefined}
+                  className="flex min-h-12 items-center border-b border-beige/15 text-sm font-medium text-beige aria-[current=location]:border-purple aria-[current=location]:font-semibold"
                 >
                   {link.label}
                 </Link>
@@ -78,7 +110,7 @@ export function Navbar() {
               <Link
                 href="/dashboard"
                 onClick={() => setOpen(false)}
-                className="mt-4 flex min-h-12 items-center justify-center gap-2 bg-purple px-5 text-sm font-semibold text-forest-dark"
+                className="motion-interactive mt-4 flex min-h-12 items-center justify-center gap-2 rounded-sm bg-purple px-5 text-sm font-semibold text-forest-dark"
               >
                 Open ledger
               </Link>

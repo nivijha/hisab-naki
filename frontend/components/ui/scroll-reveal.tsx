@@ -11,16 +11,49 @@ interface ScrollRevealProps {
 }
 
 export const ScrollReveal = React.forwardRef<HTMLDivElement, ScrollRevealProps>(
-  ({ className, children, delay = 0, duration = 0.6 }, ref) => (
-    <motion.div
-      ref={ref}
-      className={className}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0, transition: { duration, delay, ease: 'easeOut' as const } }}
-    >
-      {children}
-    </motion.div>
-  ),
+  ({ className, children, delay = 0, duration = 0.45 }, forwardedRef) => {
+    const elementRef = React.useRef<HTMLDivElement | null>(null);
+
+    React.useImperativeHandle(forwardedRef, () => elementRef.current!, []);
+
+    React.useEffect(() => {
+      const element = elementRef.current;
+      if (
+        !element ||
+        !('IntersectionObserver' in window) ||
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ) {
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            element.classList.add('is-revealed');
+            observer.unobserve(element);
+          }
+        },
+        { threshold: 0.1, rootMargin: '0px 0px -24px 0px' },
+      );
+
+      observer.observe(element);
+      return () => observer.disconnect();
+    }, []);
+
+    const style: React.CSSProperties & {
+      '--reveal-delay': string;
+      '--reveal-duration': string;
+    } = {
+      '--reveal-delay': `${delay}s`,
+      '--reveal-duration': `${duration}s`,
+    };
+
+    return (
+      <div ref={elementRef} className={['scroll-reveal', className].filter(Boolean).join(' ')} style={style}>
+        {children}
+      </div>
+    );
+  },
 );
 
 ScrollReveal.displayName = 'ScrollReveal';
@@ -54,7 +87,7 @@ interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
 
 export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   ({ className, variant = 'ghost', size = 'default', ...props }, ref) => {
-    const sizes: Record<string, string> = { sm: 'h-8 w-8', default: 'h-10 w-10', lg: 'h-12 w-12' };
+    const sizes: Record<string, string> = { sm: 'h-11 w-11', default: 'h-11 w-11', lg: 'h-12 w-12' };
     const variants: Record<string, string> = {
       default: 'bg-purple text-forest hover:bg-purple-dark',
       ghost: 'bg-beige text-forest hover:bg-beige-dark hover:text-forest',
@@ -63,7 +96,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     return (
       <button
         ref={ref}
-        className={['inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple', sizes[size], variants[variant], className].filter(Boolean).join(' ')}
+        className={['inline-flex items-center justify-center rounded-sm text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple', sizes[size], variants[variant], className].filter(Boolean).join(' ')}
         {...props}
       />
     );
