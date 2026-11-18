@@ -5,7 +5,6 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Brand palette — Forest Green / Warm Beige / Soft Purple
         forest: {
           DEFAULT: '#183D32',
           dark: '#0E1F19',
@@ -34,10 +33,6 @@ const config: Config = {
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
           foreground: 'hsl(var(--secondary-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
         },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
@@ -80,7 +75,6 @@ const config: Config = {
       animation: {
         'fade-up': 'fadeUp 0.6s ease-out forwards',
         'fade-in': 'fadeIn 0.4s ease-out forwards',
-        'scale-in': 'scaleIn 0.3s ease-out forwards',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
       },
       keyframes: {
@@ -91,10 +85,6 @@ const config: Config = {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
-        },
-        scaleIn: {
-          '0%': { opacity: '0', transform: 'scale(0.95)' },
-          '100%': { opacity: '1', transform: 'scale(1)' },
         },
         pulseSoft: {
           '0%, 100%': { opacity: '1' },

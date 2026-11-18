@@ -30,47 +30,49 @@ export function ProblemSolution() {
             </ScrollReveal>
 
             <ScrollReveal delay={0.4}>
-              <div className="flex items-start gap-4">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+              <div className="space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <p className="text-beige/80 leading-relaxed">No running balance visible at a glance.</p>
                 </div>
-                <p className="text-beige/80 leading-relaxed">No running balance visible at a glance.</p>
-              </div>
-              <div className="mt-4 flex items-start gap-4">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                <div className="flex items-start gap-4">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <p className="text-beige/80 leading-relaxed">Entries are hard to search or verify later.</p>
                 </div>
-                <p className="text-beige/80 leading-relaxed">Entries are hard to search or verify later.</p>
               </div>
             </ScrollReveal>
           </div>
 
           <div className="relative">
-            <ScrollReveal delay={0.5} className="relative rounded-xl border border-forest-light bg-beige p-[18px] shadow-forest">
+            <ScrollReveal delay={0.5} className="relative rounded-lg border border-forest-light bg-beige p-[18px] shadow-forest">
               <div className="flex items-center gap-2 mb-6 px-3 py-2 rounded-full border border-forest/20 bg-forest/5">
                 <div className="h-2 w-2 rounded-full bg-purple animate-pulse" />
                 <span className="text-xs font-medium text-forest/60">Ledger view</span>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-lg border border-forest/10 bg-white">
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
                   <div>
                     <p className="text-sm font-semibold text-forest">Raju</p>
                     <p className="text-xs text-forest/40">Outstanding balance</p>
                   </div>
                   <p className="text-sm font-bold text-forest">₹450</p>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-lg border border-forest/10 bg-white">
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
                   <div>
                     <p className="text-sm font-semibold text-forest">Meena</p>
                     <p className="text-xs text-forest/40">Outstanding balance</p>
                   </div>
                   <p className="text-sm font-bold text-forest">₹1,200</p>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-lg border border-forest/10 bg-white">
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
                   <div>
                     <p className="text-sm font-semibold text-forest">Today’s total</p>
                     <p className="text-xs text-forest/40">Sales + credit</p>

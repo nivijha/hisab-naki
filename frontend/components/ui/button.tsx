@@ -23,7 +23,7 @@ const base =
 const variants: Record<Variant, string> = {
   default: 'bg-purple text-forest shadow-sm hover:bg-purple-dark',
   destructive: 'bg-forest-dark text-beige hover:bg-forest',
-  outline: 'border border-beige-dark bg-white hover:bg-beige-light text-forest',
+  outline: 'border border-forest/20 bg-white hover:bg-beige-light text-forest',
   secondary: 'bg-beige text-forest hover:bg-beige-dark',
   ghost: 'hover:bg-beige-light text-forest/80 hover:text-forest',
   link: 'text-purple underline-offset-4 hover:underline',

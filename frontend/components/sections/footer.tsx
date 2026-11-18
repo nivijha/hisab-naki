@@ -11,7 +11,7 @@ export function Footer() {
   return (
     <footer className="border-t border-forest/10 bg-forest py-[80px]">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-12">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple">
               <Mic className="h-5 w-5 text-forest" />
@@ -19,7 +19,7 @@ export function Footer() {
             <span className="font-bold text-xl tracking-tight text-beige">HisabNaki</span>
           </div>
 
-          <div className="hidden md:flex flex-1 gap-16 text-sm">
+          <div className="hidden lg:flex lg:flex-1 lg:gap-16 text-sm">
             <div className="space-y-4">
               <p className="font-semibold text-beige uppercase text-xs tracking-wider">Product</p>
               {footerLinks.product.map((label) => (

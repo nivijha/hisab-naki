@@ -6,7 +6,7 @@ import { Menu, X, Mic } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navLinks = [
-  { href: '#product-demo', label: 'How it works' },
+  { href: '#how-it-works', label: 'How it works' },
   { href: '#features', label: 'Features' },
   { href: '#use-cases', label: 'Use cases' },
 ];

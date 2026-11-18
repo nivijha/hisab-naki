@@ -38,44 +38,82 @@ export function Features() {
           </SectionDescription>
         </SectionHeader>
 
+        {/* Prominent first feature */}
+        <ScrollReveal delay={0.1} className="mb-12 lg:mb-20">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-24 items-center">
+            <div>
+              <h3 className="text-2xl font-semibold tracking-tight text-forest sm:text-3xl mb-6">
+                {features[0].title}
+              </h3>
+              <p className="text-lg text-muted leading-relaxed mb-8 max-w-lg">
+                {features[0].body}
+              </p>
+              <div className="flex items-center gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white border border-forest/10">
+                  {features[0].icon}
+                </div>
+                <span className="text-sm font-medium text-forest">Start by speaking</span>
+              </div>
+            </div>
+            <div className="rounded-lg border border-forest/10 bg-white p-8 shadow-soft">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-beige">
+                  <div>
+                    <p className="text-sm font-semibold text-forest">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
+                    <p className="text-xs text-forest/40">Transcript</p>
+                  </div>
+                  <span className="text-xs font-medium text-purple">Voice input</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
+                  <div>
+                    <p className="text-sm font-semibold text-forest">Add credit of ₹450 to Raju</p>
+                    <p className="text-xs text-forest/40">Interpreted intent</p>
+                  </div>
+                  <span className="text-xs font-medium text-forest">AI processing</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-beige">
+                  <div>
+                    <p className="text-sm font-semibold text-forest">Confirmed and saved</p>
+                    <p className="text-xs text-forest/40">Ledger entry</p>
+                  </div>
+                  <span className="text-xs font-medium text-forest">Saved</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ScrollReveal>
+
+        {/* Supporting features - varied composition */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.map((feature, i) => (
-            <ScrollReveal key={i} delay={i * 0.05} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft hover:shadow-forest transition-shadow group">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white mb-4 group-hover:bg-purple transition-colors">
+          {features.slice(1).map((feature, i) => (
+            <ScrollReveal key={i} delay={i * 0.05} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white mb-4 border border-forest/10">
                 {feature.icon}
               </div>
-              <h3 className="text-lg font-semibold text-forest mb-3">{feature.title}</h3>
+              <h4 className="text-base font-semibold text-forest mb-3">{feature.title}</h4>
               <p className="text-sm text-muted leading-relaxed">{feature.body}</p>
             </ScrollReveal>
           ))}
         </div>
+
+        <ScrollReveal delay={0.5} className="mt-16 lg:mt-24 border-y border-forest/10 bg-white py-[80px]">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <Badge variant="outline">Encrypted in transit</Badge>
+              <Badge variant="outline">Offline-first</Badge>
+              <Badge variant="outline">No LLM math</Badge>
+            </div>
+            <h3 className="text-xl font-semibold text-forest mb-4">Trust built in</h3>
+            <p className="text-muted leading-relaxed">
+              Your ledger data stays yours. Calculations are deterministic — no guesswork, no hallucinated numbers.
+            </p>
+          </div>
+        </ScrollReveal>
       </div>
     </Section>
   );
 }
 
 export function Trust() {
-  return (
-    <section className="border-y border-forest/10 bg-forest py-[80px]">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-center gap-10 lg:gap-20 opacity-90">
-          <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-beige" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-medium text-beige/90">Encrypted in transit</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-beige/30 text-beige/90">Offline-first</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-beige/30 text-beige/90">Hindi + English</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-beige/30 text-beige/90">No LLM math</Badge>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+  return null;
 }

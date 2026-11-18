@@ -11,6 +11,7 @@
     --color-secondary: #F1E8D8;
     --color-accent: #A78BCE;
 
+    /* Derived tones */
     --color-primary-hover: #224E40;
     --color-primary-pressed: #0E1F19;
     --color-secondary-dark: #E5D9C2;
@@ -18,29 +19,32 @@
     --color-accent-dark: #8F6FB8;
     --color-accent-light: #D3C4E2;
 
+    /* Borders & muted */
     --color-border: rgba(24, 61, 50, 0.14);
     --color-muted: #68776D;
 
+    /* Radii */
     --radius-sm: 8px;
     --radius-md: 14px;
     --radius-lg: 22px;
     --radius-xl: 28px;
 
+    /* Layout */
     --container-width: 1200px;
     --section-spacing: 112px;
 
     /* Tailwind shim variables */
     --background: 38 58% 90%;
-    --foreground: 24 61 50 / 92%;
+    --foreground: 24 61 50 / 95%;
     --card: 0 0% 100%;
-    --card-foreground: 24 61 50 / 92%;
+    --card-foreground: 24 61 50 / 95%;
     --popover: 0 0% 100%;
-    --popover-foreground: 24 61 50 / 92%;
+    --popover-foreground: 24 61 50 / 95%;
     --primary: 24 61 50;
     --primary-foreground: 241 232 216;
     --primary-hover: 34 78 24;
     --secondary: 38 58% 90%;
-    --secondary-foreground: 24 61 50 / 92%;
+    --secondary-foreground: 24 61 50 / 95%;
     --muted: 38 58% 90%;
     --muted-foreground: 104 119 109;
     --accent: 167 139 206;

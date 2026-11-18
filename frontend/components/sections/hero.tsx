@@ -8,8 +8,8 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden pt-24 pb-32 lg:pt-32 lg:pb-48 bg-forest">
       <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-          <div className="lg:pr-20">
+        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+          <div className="lg:pr-24">
             <ScrollReveal delay={0.1} className="mb-8 inline-flex items-center gap-2 rounded-full border border-forest-light bg-forest-light px-3 py-1 text-xs font-semibold text-purple">
               <Mic className="h-4 w-4 text-purple" />
               Voice-first ledger
