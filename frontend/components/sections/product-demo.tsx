@@ -1,57 +1,59 @@
-'use client';
-
-import { ScrollReveal } from '@/components/ui/scroll-reveal';
-import { Mic, Sparkles, CheckCircle2 } from 'lucide-react';
-import { Section, SectionHeader, SectionTitle, SectionDescription } from '@/components/ui/section';
+import { Check, Mic, ScanText } from 'lucide-react';
+import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
 
 const steps = [
   {
     number: '01',
-    icon: <Mic className="h-6 w-6 text-purple" />,
-    title: 'Speak your transaction',
-    body: 'Say what happened in Hindi or English — “Raju ko 450 rupaye ka samaan udhaar diya.”',
+    icon: Mic,
+    title: 'Say what happened',
+    body: '“Raju ko 450 rupaye ka samaan udhaar diya.” Speak naturally, in Hindi or English.',
   },
   {
     number: '02',
-    icon: <Sparkles className="h-6 w-6 text-purple" />,
-    title: 'AI interprets the intent',
-    body: 'HisabNaki parses the transcript into a structured ledger command — customer, amount, type.',
+    icon: ScanText,
+    title: 'Check the entry',
+    body: 'HisabNaki shows the customer, amount and transaction type before saving.',
   },
   {
     number: '03',
-    icon: <CheckCircle2 className="h-6 w-6 text-purple" />,
-    title: 'Confirm and save',
-    body: 'Review the interpreted action, confirm with one tap, and it is recorded to your ledger.',
+    icon: Check,
+    title: 'Confirm to save',
+    body: 'One confirmation adds the entry. Your running balance updates from the ledger.',
   },
 ];
 
 export function ProductDemo() {
   return (
     <Section id="how-it-works" padding="lg" bg="beige">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <SectionHeader>
-          <SectionTitle>From voice to ledger in three steps</SectionTitle>
-          <SectionDescription>
-            No forms to fill. No columns to type. Just speak and your books update themselves.
+      <div className="site-container">
+        <SectionHeader className="grid gap-5 md:grid-cols-[1.1fr_0.9fr] md:items-end">
+          <SectionTitle>From spoken words to a saved entry</SectionTitle>
+          <SectionDescription className="mt-0">
+            Every transaction is shown for review before it becomes part of the customer’s account.
           </SectionDescription>
         </SectionHeader>
 
-        <div className="grid md:grid-cols-3 gap-8 items-start">
-          {steps.map((step, i) => (
-            <ScrollReveal key={i} delay={i * 0.08} className="rounded-lg border border-forest/10 bg-white p-8 shadow-soft">
-              <div className="flex items-start gap-3 mb-6">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple/10 shrink-0">
-                  <span className="text-sm font-semibold text-purple-dark">{step.number}</span>
+        <div className="relative grid gap-8 lg:grid-cols-3 lg:gap-10">
+          <div aria-hidden="true" className="absolute left-[16.67%] right-[16.67%] top-5 hidden h-px bg-forest/25 lg:block" />
+          {steps.map((step) => {
+            const Icon = step.icon;
+
+            return (
+              <article key={step.number} className="relative grid grid-cols-[2.5rem_1fr] gap-x-4 lg:block">
+                <div className="relative z-10 flex h-10 w-10 items-center justify-center bg-purple text-sm font-semibold text-forest-dark">
+                  {step.number}
                 </div>
-                <div>{step.icon}</div>
-              </div>
-              <h3 className="text-lg font-semibold text-forest mb-3">{step.title}</h3>
-              <p className="text-muted leading-relaxed">{step.body}</p>
-              {i < steps.length - 1 && (
-                <div className="mt-8 h-[1px] w-full bg-forest/10" />
-              )}
-            </ScrollReveal>
-          ))}
+                <div className="pb-2 pt-1 lg:mt-6 lg:pt-0">
+                  <div className="mb-3 flex items-center gap-2 text-forest">
+                    <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Step {step.number}</span>
+                  </div>
+                  <h3 className="mb-2 text-lg font-semibold tracking-tight text-forest">{step.title}</h3>
+                  <p className="max-w-sm text-sm leading-6 text-muted sm:text-base">{step.body}</p>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
     </Section>

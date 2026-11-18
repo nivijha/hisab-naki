@@ -1,78 +1,104 @@
-'use client';
-
+import Link from 'next/link';
+import { ArrowDownRight, ArrowUpRight, Mic, MoveRight } from 'lucide-react';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
-import { Mic, ArrowRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden pt-24 pb-32 lg:pt-32 lg:pb-48 bg-forest">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-          <div className="lg:pr-24">
-            <ScrollReveal delay={0.1} className="mb-8 inline-flex items-center gap-2 rounded-full border border-forest-light bg-forest-light px-3 py-1 text-xs font-semibold text-purple">
-              <Mic className="h-4 w-4 text-purple" />
-              Voice-first ledger
+    <section className="bg-forest pb-16 pt-28 text-beige lg:pb-24 lg:pt-36">
+      <div className="site-container">
+        <div className="grid items-center gap-12 lg:grid-cols-[0.88fr_1.12fr] lg:gap-14">
+          <div className="max-w-[35rem]">
+            <ScrollReveal delay={0.05} className="mb-6 inline-flex items-center gap-2 bg-purple px-3 py-1.5 text-xs font-semibold tracking-wide text-forest-dark">
+              <Mic aria-hidden="true" className="h-4 w-4 text-forest-dark" />
+              A voice-first shop ledger
             </ScrollReveal>
 
-            <ScrollReveal delay={0.2}>
-              <h1 className="text-4xl font-bold tracking-tight text-beige sm:text-5xl lg:text-6xl leading-[1.1] mb-8">
-                Record your shop’s{' '}
-                <br />
-                <span className="text-purple">entire ledger by voice.</span>
+            <ScrollReveal delay={0.1}>
+              <h1 className="mb-6 font-serif text-[2.75rem] font-semibold leading-[1.06] tracking-[-0.035em] text-beige text-balance sm:text-5xl xl:text-[3.65rem]">
+                Your shop’s hisaab,
+                <br className="hidden sm:block" /> just say it.
               </h1>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.3}>
-              <p className="text-lg text-beige/90 max-w-xl leading-relaxed mb-10">
-                Speak in Hindi or English. HisabNaki interprets your transactions, confirms them with you, and saves them to a
-                deterministic ledger — no typing, no mistakes.
+              <p className="max-w-[34rem] text-base leading-7 text-beige sm:text-lg sm:leading-8">
+                Record udhaar, payments and daily sales in Hindi or English. Check every entry before it reaches your books.
               </p>
             </ScrollReveal>
 
-            <ScrollReveal delay={0.4} className="flex flex-col sm:flex-row gap-4">
-              <Button size="lg" className="w-full sm:w-auto">
-                Start recording <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                See how it works
-              </Button>
+            <ScrollReveal delay={0.2} className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <Link
+                href="/dashboard"
+                className="inline-flex min-h-12 items-center gap-3 bg-purple px-5 text-sm font-semibold text-forest-dark transition-colors hover:bg-beige focus-visible:outline-offset-4"
+              >
+                Open your ledger <MoveRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
+              <Link href="#how-it-works" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-beige underline decoration-beige/50 underline-offset-4 transition-colors hover:decoration-beige">
+                See how it works <ArrowDownRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
             </ScrollReveal>
           </div>
 
-          <div className="relative hidden lg:block">
-            <ScrollReveal delay={0.5} className="relative rounded-xl border border-forest-light bg-white shadow-forest p-[18px]">
-              <div className="flex items-center gap-2 mb-6 px-3 py-2 rounded-full border border-forest/20 bg-forest/5">
-                <div className="h-2 w-2 rounded-full bg-purple animate-pulse" />
-                <span className="text-xs font-medium text-forest/60">Listening…</span>
-              </div>
-              <div className="mb-6 p-4 rounded-lg border border-forest/10 bg-beige">
-                <p className="text-xs uppercase tracking-wider text-forest/40">Transcript</p>
-                <p className="mt-1 text-forest">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
-              </div>
-              <div className="mb-6 p-4 rounded-lg border border-purple/20 bg-purple/5">
-                <p className="text-xs uppercase tracking-wider text-purple-dark">Interpreted intent</p>
-                <p className="mt-1 text-forest">Add credit of ₹450 to Raju</p>
-              </div>
-              <div className="flex gap-3">
-                <Button variant="outline" size="sm" className="flex-1">
-                  Confirm
-                </Button>
-                <Button variant="destructive" size="sm" className="flex-1">
-                  Edit
-                </Button>
-              </div>
-              <div className="absolute -bottom-8 -left-8 flex items-center gap-2 rounded-lg border border-forest-light bg-white p-3 shadow-soft">
-                <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-purple">
-                  <Mic className="h-5 w-5 text-forest" />
-                </div>
+          <ScrollReveal delay={0.15} className="min-w-0">
+            <div className="border border-beige/20 bg-beige p-4 text-forest shadow-forest sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-forest/15 pb-4">
                 <div>
-                  <p className="text-xs font-semibold text-forest">₹450</p>
-                  <p className="text-xs text-forest/60">Credit · Raju</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted">NAMASTE STORES</p>
+                  <p className="mt-1 text-sm font-medium">Today, 18 November</p>
+                </div>
+                <Link href="/dashboard" className="inline-flex min-h-10 items-center gap-2 border border-forest/20 px-3 text-xs font-semibold text-forest transition-colors hover:bg-purple hover:text-forest-dark">
+                  View ledger <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 py-5 sm:grid-cols-3">
+                <div className="col-span-2 border-l-2 border-purple pl-3 sm:col-span-1">
+                  <p className="text-xs text-muted">Outstanding</p>
+                  <p className="mt-1 text-2xl font-semibold tracking-tight">₹18,450</p>
+                </div>
+                <div className="border-l border-forest/15 pl-3">
+                  <p className="text-xs text-muted">Sales today</p>
+                  <p className="mt-1 text-lg font-semibold">₹8,200</p>
+                </div>
+                <div className="border-l border-forest/15 pl-3">
+                  <p className="text-xs text-muted">Collected</p>
+                  <p className="mt-1 text-lg font-semibold">₹2,650</p>
                 </div>
               </div>
-            </ScrollReveal>
-          </div>
+
+              <div className="border border-forest/15 bg-beige-light p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">VOICE ENTRY · NEEDS CONFIRMATION</p>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center bg-purple text-forest-dark">
+                    <Mic aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-forest">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-forest/15 pt-4">
+                  <div>
+                    <p className="text-xs text-muted">Add credit to Raju</p>
+                    <p className="mt-1 text-xl font-semibold">₹450</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-forest">
+                      <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" /> Credit
+                    </span>
+                    <span className="bg-forest px-3 py-2 text-xs font-semibold text-beige">Confirm</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-3 border-t border-forest/15 pt-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">RECENT</p>
+                  <p className="mt-2 text-sm font-medium">Meena · Payment received</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold">₹1,200</p>
+                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted">
+                    <ArrowDownRight aria-hidden="true" className="h-3.5 w-3.5" /> settled
+                  </p>
+                </div>
+              </div>
+            </div>
+          </ScrollReveal>
         </div>
       </div>
     </section>

@@ -1,88 +1,74 @@
 'use client';
 
+import { ArrowDownRight, ArrowUpRight, BookOpenText } from 'lucide-react';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
-import { Section, SectionHeader, SectionTitle, SectionDescription } from '@/components/ui/section';
+import { Section } from '@/components/ui/section';
+
+const balances = [
+  { name: 'Raju Sharma', entry: 'Grocery · 10:42 am', amount: '₹450', direction: 'up' },
+  { name: 'Meena Devi', entry: 'Payment · 10:18 am', amount: '₹1,200', direction: 'down' },
+  { name: 'Amit Kumar', entry: 'Household · 9:56 am', amount: '₹780', direction: 'up' },
+];
 
 export function ProblemSolution() {
   return (
-    <Section id="problem-solution" padding="lg" bg="forest">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-          <div>
-            <ScrollReveal delay={0.1} className="mb-6 inline-flex items-center gap-2 rounded-full border border-forest-light bg-forest-light px-3 py-1 text-xs font-semibold text-purple">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              The problem
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.2}>
-              <h2 className="text-3xl font-semibold tracking-tight text-beige sm:text-4xl leading-[1.2] mb-8">
-                Credit books are still paper and memory
-              </h2>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.3}>
-              <p className="text-lg text-beige/90 max-w-xl leading-relaxed mb-8">
-                Small shopkeepers track dues in notebooks or from memory. A missed entry, a forgotten amount,
-                or a disputed balance costs real money — and there is no undo.
-              </p>
-            </ScrollReveal>
-
-            <ScrollReveal delay={0.4}>
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <p className="text-beige/80 leading-relaxed">No running balance visible at a glance.</p>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-forest-light shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-purple" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <p className="text-beige/80 leading-relaxed">Entries are hard to search or verify later.</p>
-                </div>
-              </div>
-            </ScrollReveal>
-          </div>
-
-          <div className="relative">
-            <ScrollReveal delay={0.5} className="relative rounded-lg border border-forest-light bg-beige p-[18px] shadow-forest">
-              <div className="flex items-center gap-2 mb-6 px-3 py-2 rounded-full border border-forest/20 bg-forest/5">
-                <div className="h-2 w-2 rounded-full bg-purple animate-pulse" />
-                <span className="text-xs font-medium text-forest/60">Ledger view</span>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">Raju</p>
-                    <p className="text-xs text-forest/40">Outstanding balance</p>
-                  </div>
-                  <p className="text-sm font-bold text-forest">₹450</p>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">Meena</p>
-                    <p className="text-xs text-forest/40">Outstanding balance</p>
-                  </div>
-                  <p className="text-sm font-bold text-forest">₹1,200</p>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">Today’s total</p>
-                    <p className="text-xs text-forest/40">Sales + credit</p>
-                  </div>
-                  <p className="text-sm font-bold text-forest">₹3,150</p>
-                </div>
-              </div>
-            </ScrollReveal>
+    <Section id="problem-solution" padding="lg" bg="forest" className="text-beige">
+      <div className="site-container grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+        <div className="max-w-xl">
+          <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-beige">The cost of a missed entry</p>
+          <h2 className="mb-6 font-serif text-3xl font-semibold leading-tight tracking-tight text-beige text-balance sm:text-4xl">
+            A paper book can’t keep up with a busy counter.
+          </h2>
+          <p className="max-w-lg text-base leading-7 text-beige sm:text-lg sm:leading-8">
+            When customers are waiting, a sale gets written down later—or not at all. Then it’s hard to remember who paid, what’s still due, or where the number came from.
+          </p>
+          <div className="mt-8 border-t border-beige/25">
+            <p className="border-b border-beige/25 py-3 text-sm text-beige">Entries get delayed until closing time.</p>
+            <p className="border-b border-beige/25 py-3 text-sm text-beige">Old balances are difficult to check quickly.</p>
+            <p className="py-3 text-sm text-beige">A disputed amount means searching page by page.</p>
           </div>
         </div>
+
+        <ScrollReveal delay={0.08} className="min-w-0">
+          <div className="border border-beige/20 bg-beige p-5 text-forest sm:p-7">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-forest/20 pb-5">
+              <div>
+                <div className="mb-3 flex items-center gap-2 text-muted">
+                  <BookOpenText aria-hidden="true" className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.12em]">Customer ledger</span>
+                </div>
+                <p className="font-serif text-2xl font-semibold tracking-tight text-forest">Outstanding balances</p>
+              </div>
+              <div className="text-left sm:text-right">
+                <p className="text-xs text-muted">3 customers due</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-forest">₹18,450</p>
+              </div>
+            </div>
+
+            <div className="divide-y divide-forest/15">
+              {balances.map((balance) => (
+                <div key={balance.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-forest">{balance.name}</p>
+                    <p className="mt-1 text-xs text-muted">{balance.entry}</p>
+                  </div>
+                  <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-forest">
+                    {balance.direction === 'up' ? (
+                      <ArrowUpRight aria-label="Credit added" className="h-4 w-4" />
+                    ) : (
+                      <ArrowDownRight aria-label="Payment received" className="h-4 w-4" />
+                    )}
+                    {balance.amount}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <p className="border-t border-forest/20 pt-4 text-xs leading-5 text-muted">
+              Each balance is the sum of confirmed entries—not an estimate.
+            </p>
+          </div>
+        </ScrollReveal>
       </div>
     </Section>
   );

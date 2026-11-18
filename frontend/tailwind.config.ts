@@ -35,8 +35,8 @@ const config: Config = {
           foreground: 'hsl(var(--secondary-foreground))',
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: '#52665B',
+          foreground: '#52665B',
         },
         accent: {
           DEFAULT: 'hsl(var(--accent))',
@@ -66,7 +66,7 @@ const config: Config = {
         sans: ['var(--font-inter)'],
       },
       spacing: {
-        'section': '112px',
+        'section': '104px',
         'card': '32px',
         'element': '24px',
         'component': '16px',

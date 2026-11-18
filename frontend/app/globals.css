@@ -5,56 +5,26 @@
 @layer base {
   :root {
     color-scheme: light;
-
-    /* Brand palette — Forest Green / Warm Beige / Soft Purple */
-    --color-primary: #183D32;
-    --color-secondary: #F1E8D8;
-    --color-accent: #A78BCE;
-
-    /* Derived tones */
-    --color-primary-hover: #224E40;
-    --color-primary-pressed: #0E1F19;
-    --color-secondary-dark: #E5D9C2;
-    --color-secondary-light: #F7F2E8;
-    --color-accent-dark: #8F6FB8;
-    --color-accent-light: #D3C4E2;
-
-    /* Borders & muted */
-    --color-border: rgba(24, 61, 50, 0.14);
-    --color-muted: #68776D;
-
-    /* Radii */
-    --radius-sm: 8px;
-    --radius-md: 14px;
-    --radius-lg: 22px;
-    --radius-xl: 28px;
-
-    /* Layout */
-    --container-width: 1200px;
-    --section-spacing: 112px;
-
-    /* Tailwind shim variables */
+    --forest: #183d32;
+    --beige: #f1e8d8;
+    --purple: #a78bce;
+    --ink-muted: #52665b;
+    --line: rgba(24, 61, 50, 0.18);
     --background: 38 58% 90%;
-    --foreground: 24 61 50 / 95%;
-    --card: 0 0% 100%;
-    --card-foreground: 24 61 50 / 95%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 24 61 50 / 95%;
-    --primary: 24 61 50;
-    --primary-foreground: 241 232 216;
-    --primary-hover: 34 78 24;
+    --foreground: 155 43% 17%;
+    --card: 38 58% 94%;
+    --card-foreground: 155 43% 17%;
+    --primary: 155 43% 17%;
+    --primary-foreground: 38 58% 90%;
     --secondary: 38 58% 90%;
-    --secondary-foreground: 24 61 50 / 95%;
+    --secondary-foreground: 155 43% 17%;
     --muted: 38 58% 90%;
-    --muted-foreground: 104 119 109;
-    --accent: 167 139 206;
-    --accent-foreground: 24 61 50;
-    --accent-hover: 143 111 184;
-    --destructive: 139 36 36;
-    --destructive-foreground: 241 232 216;
-    --border: 24 61 50 / 0.14;
-    --input: 24 61 50 / 0.14;
-    --ring: 24 61 50;
+    --muted-foreground: 155 11% 37%;
+    --accent: 267 39% 68%;
+    --accent-foreground: 155 43% 17%;
+    --border: 155 43% 17% / 0.18;
+    --input: 155 43% 17% / 0.18;
+    --ring: 267 39% 68%;
     --radius: 0.75rem;
   }
 
@@ -64,16 +34,18 @@
 
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
   }
 
   body {
-    background-color: #F1E8D8;
-    color: #183D32;
+    background-color: var(--beige);
+    color: var(--forest);
     font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     margin: 0;
     min-height: 100vh;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
   }
 
   button,
@@ -85,7 +57,7 @@
 
   /* Focus rings */
   :focus-visible {
-    outline: 2px solid #183D32;
+    outline: 2px solid var(--purple);
     outline-offset: 2px;
   }
 
@@ -101,27 +73,34 @@
   }
 }
 
+@layer components {
+  .site-container {
+    width: min(calc(100% - 2.5rem), 1296px);
+    margin-inline: auto;
+  }
+
+  .site-section {
+    padding-block: clamp(5rem, 7vw, 6.5rem);
+    scroll-margin-top: 5rem;
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
-.mic-pulse {
-  animation: pulse 1.2s infinite ease-in-out;
+@media (min-width: 768px) {
+  .site-container {
+    width: min(calc(100% - 4rem), 1296px);
+    padding-inline: 1.5rem;
+  }
 }
 
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(167, 139, 206, 0.45);
-  }
-  70% {
-    transform: scale(1.03);
-    box-shadow: 0 0 0 18px rgba(167, 139, 206, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(167, 139, 206, 0);
+@media (min-width: 1280px) {
+  .site-container {
+    width: min(calc(100% - 6rem), 1296px);
+    padding-inline: 3rem;
   }
 }

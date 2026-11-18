@@ -1,47 +1,41 @@
-'use client';
-
-import { ScrollReveal } from '@/components/ui/scroll-reveal';
-import { User, DollarSign, Building } from 'lucide-react';
-import { Section, SectionHeader, SectionTitle, SectionDescription } from '@/components/ui/section';
+import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
 
 const useCases = [
   {
-    icon: <User className="h-6 w-6 text-purple" />,
-    title: 'Individual shopkeeper',
-    body: 'Run your daily credit book by voice while serving customers — no paperwork between sales.',
+    number: '01',
+    title: 'The kirana owner',
+    body: 'Add a customer’s udhaar while packing the order. No need to put the queue on hold to find a pen.',
   },
   {
-    icon: <DollarSign className="h-6 w-6 text-purple" />,
-    title: 'Proprietor',
-    body: 'Track sales, expenses, and payments across the day with a live outstanding balance.',
+    number: '02',
+    title: 'The neighbourhood retailer',
+    body: 'Record payments as they come in and check what each regular customer still owes.',
   },
   {
-    icon: <Building className="h-6 w-6 text-purple" />,
-    title: 'Small store team',
-    body: 'Record transactions as they happen and reconcile the ledger at closing time.',
+    number: '03',
+    title: 'The family-run shop',
+    body: 'Keep one running book of sales, expenses and credit that everyone can review at closing.',
   },
 ];
 
 export function UseCases() {
   return (
     <Section id="use-cases" padding="lg" bg="beige">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <SectionHeader>
-          <SectionTitle>Who uses HisabNaki</SectionTitle>
-          <SectionDescription>
-            Anyone who runs a shop on credit and wants their books up to date without touching a keyboard.
+      <div className="site-container">
+        <SectionHeader className="grid gap-5 md:grid-cols-[1.1fr_0.9fr] md:items-end">
+          <SectionTitle>Made for the rhythm of a local shop</SectionTitle>
+          <SectionDescription className="mt-0">
+            When your hands are busy and customers are waiting, your ledger should still be easy to keep.
           </SectionDescription>
         </SectionHeader>
 
-        <div className="grid md:grid-cols-3 gap-6">
-          {useCases.map((item, i) => (
-            <ScrollReveal key={i} delay={i * 0.08} className="rounded-lg border border-forest/10 bg-white p-8 shadow-soft">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-purple/10 mb-6">
-                {item.icon}
-              </div>
-              <h3 className="text-lg font-semibold text-forest mb-3">{item.title}</h3>
-              <p className="text-sm text-muted leading-relaxed">{item.body}</p>
-            </ScrollReveal>
+        <div className="grid gap-8 md:grid-cols-3 md:gap-10">
+          {useCases.map((item) => (
+            <article key={item.number} className="min-h-full border-t-2 border-forest/30 pt-5">
+              <p className="mb-5 text-xs font-semibold tracking-[0.12em] text-muted">{item.number}</p>
+              <h3 className="font-serif text-xl font-semibold leading-snug tracking-tight text-forest">{item.title}</h3>
+              <p className="mt-3 max-w-sm text-sm leading-6 text-muted sm:text-base">{item.body}</p>
+            </article>
           ))}
         </div>
       </div>

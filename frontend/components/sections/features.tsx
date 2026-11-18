@@ -1,119 +1,119 @@
-'use client';
+import { ArrowDownRight, ArrowUpRight, Check, Mic } from 'lucide-react';
+import { Section, SectionDescription, SectionHeader, SectionTitle } from '@/components/ui/section';
 
-import { ScrollReveal } from '@/components/ui/scroll-reveal';
-import { Smartphone, CreditCard, Users, TrendingUp, ShieldCheck } from 'lucide-react';
-import { Section, SectionHeader, SectionTitle, SectionDescription, Badge } from '@/components/ui/section';
+const ledgerRows = [
+  { name: 'Raju Sharma', detail: 'Credit · grocery', amount: '₹450', icon: ArrowUpRight },
+  { name: 'Meena Devi', detail: 'Payment received', amount: '₹1,200', icon: ArrowDownRight },
+  { name: 'Amit Kumar', detail: 'Credit · household', amount: '₹780', icon: ArrowUpRight },
+];
 
-const features = [
+const supportingFeatures = [
   {
-    title: 'Voice-first entry',
-    body: 'Record sales, expenses, and credit by speaking naturally. No typing required.',
-    icon: <Smartphone className="h-6 w-6 text-purple" />,
+    number: '01',
+    title: 'Speak in your own words',
+    body: 'Say a name, amount and what happened. Hindi and English fit naturally in the same sentence.',
   },
   {
-    title: 'Deterministic ledger',
-    body: 'Calculations are done on the backend, not by an LLM — your balances are always exact.',
-    icon: <CreditCard className="h-6 w-6 text-purple" />,
+    number: '02',
+    title: 'Balances come from entries',
+    body: 'Credits add to what’s due; payments reduce it. The ledger calculates the running total.',
   },
   {
-    title: 'Customer-wise outstanding',
-    body: 'See exactly how much each customer owes you at a glance.',
-    icon: <Users className="h-6 w-6 text-purple" />,
-  },
-  {
-    title: 'Daily summary',
-    body: 'Track today’s sales, expenses, payments, and outstanding credit in one view.',
-    icon: <TrendingUp className="h-6 w-6 text-purple" />,
+    number: '03',
+    title: 'Close the day with a clear view',
+    body: 'See sales, expenses, payments received and new credit together, without searching through pages.',
   },
 ];
 
 export function Features() {
   return (
     <Section id="features" padding="lg" bg="beige">
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
-        <SectionHeader className="mb-16 lg:mb-24">
-          <SectionTitle>Built for shopkeepers, not accountants</SectionTitle>
-          <SectionDescription>
-            Everything you need to run your shop’s credit book — nothing you don’t.
+      <div className="site-container">
+        <SectionHeader className="grid gap-5 md:grid-cols-[1.1fr_0.9fr] md:items-end">
+          <SectionTitle>A ledger that keeps pace with the shop</SectionTitle>
+          <SectionDescription className="mt-0">
+            Fast to update at the counter. Clear enough to check at the end of the day.
           </SectionDescription>
         </SectionHeader>
 
-        {/* Prominent first feature */}
-        <ScrollReveal delay={0.1} className="mb-12 lg:mb-20">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-24 items-center">
-            <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-forest sm:text-3xl mb-6">
-                {features[0].title}
-              </h3>
-              <p className="text-lg text-muted leading-relaxed mb-8 max-w-lg">
-                {features[0].body}
-              </p>
-              <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white border border-forest/10">
-                  {features[0].icon}
-                </div>
-                <span className="text-sm font-medium text-forest">Start by speaking</span>
+        <div className="grid items-start gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+          <div className="min-w-0 border border-forest/20 bg-beige-light p-5 sm:p-7">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-forest/20 pb-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Daily ledger</p>
+                <p className="mt-1 font-serif text-2xl font-semibold tracking-tight text-forest">Namaste Stores</p>
+              </div>
+              <p className="text-sm text-muted">Tuesday, 18 November</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 border-b border-forest/20 py-5 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted">Sales</p>
+                <p className="mt-1 text-lg font-semibold text-forest">₹8,200</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted">Payments in</p>
+                <p className="mt-1 text-lg font-semibold text-forest">₹2,650</p>
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-xs text-muted">Outstanding</p>
+                <p className="mt-1 text-lg font-semibold text-forest">₹18,450</p>
               </div>
             </div>
-            <div className="rounded-lg border border-forest/10 bg-white p-8 shadow-soft">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-beige">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
-                    <p className="text-xs text-forest/40">Transcript</p>
-                  </div>
-                  <span className="text-xs font-medium text-purple">Voice input</span>
+
+            <div className="py-4">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-forest">Recent entries</h3>
+                <span className="text-xs text-muted">Today</span>
+              </div>
+              <div className="divide-y divide-forest/15">
+                {ledgerRows.map((row) => {
+                  const Icon = row.icon;
+                  return (
+                    <div key={row.name} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-forest">{row.name}</p>
+                        <p className="mt-0.5 text-xs text-muted">{row.detail}</p>
+                      </div>
+                      <p className="inline-flex items-center gap-1 text-sm font-semibold text-forest">
+                        <Icon aria-hidden="true" className="h-4 w-4" /> {row.amount}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-purple p-4 text-forest-dark sm:flex sm:items-center sm:justify-between sm:gap-4">
+              <div className="flex min-w-0 gap-3">
+                <Mic aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em]">Voice entry · review first</p>
+                  <p className="mt-1 text-sm leading-5">“Raju ko 450 rupaye ka samaan udhaar diya.”</p>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-white">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">Add credit of ₹450 to Raju</p>
-                    <p className="text-xs text-forest/40">Interpreted intent</p>
-                  </div>
-                  <span className="text-xs font-medium text-forest">AI processing</span>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-md border border-forest/10 bg-beige">
-                  <div>
-                    <p className="text-sm font-semibold text-forest">Confirmed and saved</p>
-                    <p className="text-xs text-forest/40">Ledger entry</p>
-                  </div>
-                  <span className="text-xs font-medium text-forest">Saved</span>
-                </div>
+              </div>
+              <div className="mt-3 flex shrink-0 items-center gap-3 sm:mt-0">
+                <span className="text-sm font-semibold">₹450 · Credit</span>
+                <span className="inline-flex min-h-9 items-center gap-1.5 bg-forest px-3 text-xs font-semibold text-beige">
+                  <Check aria-hidden="true" className="h-3.5 w-3.5" /> Confirm
+                </span>
               </div>
             </div>
           </div>
-        </ScrollReveal>
 
-        {/* Supporting features - varied composition */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {features.slice(1).map((feature, i) => (
-            <ScrollReveal key={i} delay={i * 0.05} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white mb-4 border border-forest/10">
-                {feature.icon}
-              </div>
-              <h4 className="text-base font-semibold text-forest mb-3">{feature.title}</h4>
-              <p className="text-sm text-muted leading-relaxed">{feature.body}</p>
-            </ScrollReveal>
-          ))}
+          <div className="divide-y divide-forest/20">
+            {supportingFeatures.map((feature) => (
+              <article key={feature.number} className="grid grid-cols-[2.5rem_1fr] gap-4 py-6 first:pt-0 last:pb-0">
+                <span className="pt-1 text-xs font-semibold tracking-[0.1em] text-muted">{feature.number}</span>
+                <div>
+                  <h3 className="text-lg font-semibold tracking-tight text-forest">{feature.title}</h3>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-muted sm:text-base">{feature.body}</p>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
-
-        <ScrollReveal delay={0.5} className="mt-16 lg:mt-24 border-y border-forest/10 bg-white py-[80px]">
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <Badge variant="outline">Encrypted in transit</Badge>
-              <Badge variant="outline">Offline-first</Badge>
-              <Badge variant="outline">No LLM math</Badge>
-            </div>
-            <h3 className="text-xl font-semibold text-forest mb-4">Trust built in</h3>
-            <p className="text-muted leading-relaxed">
-              Your ledger data stays yours. Calculations are deterministic — no guesswork, no hallucinated numbers.
-            </p>
-          </div>
-        </ScrollReveal>
       </div>
     </Section>
   );
-}
-
-export function Trust() {
-  return null;
 }

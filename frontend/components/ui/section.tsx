@@ -28,9 +28,9 @@ export const Section = React.forwardRef<HTMLDivElement, SectionProps>(
   ({ className, children, padding = 'lg', bg = 'beige', ...props }, ref) => {
     const paddingMap: Record<string, string> = {
       none: '',
-      sm: 'py-20',
-      md: 'py-28',
-      lg: 'py-[112px]',
+      sm: 'py-16',
+      md: 'py-20 lg:py-24',
+      lg: 'site-section',
     };
     const bgMap: Record<string, string> = {
       beige: 'bg-beige',
@@ -54,7 +54,7 @@ Section.displayName = 'Section';
 interface SectionHeaderProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export const SectionHeader = React.forwardRef<HTMLDivElement, SectionHeaderProps>(({ className, children, ...props }, ref) => (
-  <div ref={ref} className={['text-center max-w-2xl mx-auto mb-16 lg:mb-24', className].filter(Boolean).join(' ')} {...props}>
+  <div ref={ref} className={['max-w-3xl mb-10 lg:mb-12', className].filter(Boolean).join(' ')} {...props}>
     {children}
   </div>
 ));
@@ -64,7 +64,7 @@ SectionHeader.displayName = 'SectionHeader';
 interface SectionTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {}
 
 export const SectionTitle = React.forwardRef<HTMLHeadingElement, SectionTitleProps>(({ className, ...props }, ref) => (
-  <h2 ref={ref} className={['text-3xl font-semibold tracking-tight text-forest sm:text-4xl', className].filter(Boolean).join(' ')} {...props} />
+  <h2 ref={ref} className={['font-serif text-3xl font-semibold leading-tight tracking-tight text-forest sm:text-4xl text-balance', className].filter(Boolean).join(' ')} {...props} />
 ));
 
 SectionTitle.displayName = 'SectionTitle';
@@ -72,7 +72,7 @@ SectionTitle.displayName = 'SectionTitle';
 interface SectionDescriptionProps extends React.HTMLAttributes<HTMLParagraphElement> {}
 
 export const SectionDescription = React.forwardRef<HTMLParagraphElement, SectionDescriptionProps>(({ className, ...props }, ref) => (
-  <p ref={ref} className={['text-lg text-muted mt-4 sm:mt-6 max-w-2xl mx-auto leading-relaxed', className].filter(Boolean).join(' ')} {...props} />
+  <p ref={ref} className={['mt-4 max-w-2xl text-base leading-relaxed text-muted sm:text-lg', className].filter(Boolean).join(' ')} {...props} />
 ));
 
 SectionDescription.displayName = 'SectionDescription';
@@ -85,7 +85,7 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(({ className,
   const variants: Record<string, string> = {
     default: 'bg-purple text-forest px-2.5 py-0.5 rounded-full text-xs font-semibold',
     secondary: 'bg-beige text-forest px-2.5 py-0.5 rounded-full text-xs font-semibold border border-beige-dark',
-    outline: 'border border-forest bg-white text-forest px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    outline: 'border border-forest bg-beige text-forest px-2.5 py-0.5 rounded-sm text-xs font-semibold',
   };
   return (
     <span ref={ref} className={[variants[variant], className].filter(Boolean).join(' ')} {...props} />
