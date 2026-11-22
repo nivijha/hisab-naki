@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { Mic } from 'lucide-react';
+import { DashboardAccessBoundary } from '@/components/auth/dashboard-access-boundary';
+import { DashboardHeaderActions } from '@/components/auth/dashboard-header-actions';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,17 +16,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="font-bold text-xl tracking-tight text-beige">HisabNaki</span>
             </Link>
 
-            <div className="flex items-center gap-3">
-              <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige lg:min-h-0">
-                Back to site
-              </Link>
-            </div>
+            <DashboardHeaderActions />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-8">
-        {children}
+        <DashboardAccessBoundary>{children}</DashboardAccessBoundary>
       </main>
     </div>
   );
