@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { motion } from 'framer-motion';
 
 interface ScrollRevealProps {
   children: React.ReactNode;
@@ -11,7 +10,7 @@ interface ScrollRevealProps {
 }
 
 export const ScrollReveal = React.forwardRef<HTMLDivElement, ScrollRevealProps>(
-  ({ className, children, delay = 0, duration = 0.45 }, forwardedRef) => {
+  ({ className, children, delay = 0, duration = 0.22 }, forwardedRef) => {
     const elementRef = React.useRef<HTMLDivElement | null>(null);
 
     React.useImperativeHandle(forwardedRef, () => elementRef.current!, []);
@@ -57,28 +56,6 @@ export const ScrollReveal = React.forwardRef<HTMLDivElement, ScrollRevealProps>(
 );
 
 ScrollReveal.displayName = 'ScrollReveal';
-
-interface RevealListProps {
-  children: React.ReactNode;
-  className?: string;
-  stagger?: number;
-}
-
-export const RevealList = React.forwardRef<HTMLDivElement, RevealListProps>(
-  ({ className, children, stagger = 0.1 }, ref) => (
-    <motion.div
-      ref={ref}
-      className={className}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.4, ease: 'easeOut' as const, staggerChildren: stagger }}
-    >
-      {children}
-    </motion.div>
-  ),
-);
-
-RevealList.displayName = 'RevealList';
 
 interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'default' | 'ghost' | 'outline';

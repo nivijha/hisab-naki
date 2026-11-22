@@ -7,7 +7,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <header className="border-b border-forest/10 bg-forest sticky top-0 z-40">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex min-h-11 items-center gap-2 lg:min-h-0">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple">
                 <Mic className="h-5 w-5 text-forest" />
               </div>
@@ -15,7 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
 
             <div className="flex items-center gap-3">
-              <Link href="/" className="text-sm font-medium text-forest/80 hover:text-forest transition-colors">
+              <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige lg:min-h-0">
                 Back to site
               </Link>
             </div>

@@ -9,34 +9,54 @@ const barHeights = [
 
 interface VoiceWaveformProps {
   className?: string;
+  animate?: boolean;
 }
 
-export function VoiceWaveform({ className = '' }: VoiceWaveformProps) {
+export function VoiceWaveform({ className = '', animate = false }: VoiceWaveformProps) {
   const waveformRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const waveform = waveformRef.current;
-    if (!waveform || !('IntersectionObserver' in window)) {
+    if (!animate || !waveform || !('IntersectionObserver' in window)) {
       return;
     }
 
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let observer: IntersectionObserver | undefined;
     let isIntersecting = false;
     const updatePlayback = () => {
-      waveform.classList.toggle('is-active', isIntersecting && document.visibilityState === 'visible');
+      waveform.classList.toggle('is-active', !reducedMotion.matches && isIntersecting && document.visibilityState === 'visible');
     };
-    const observer = new IntersectionObserver(([entry]) => {
-      isIntersecting = entry.isIntersecting;
-      updatePlayback();
-    });
+    const stopObserving = () => {
+      observer?.disconnect();
+      observer = undefined;
+      isIntersecting = false;
+      document.removeEventListener('visibilitychange', updatePlayback);
+      waveform.classList.remove('is-active');
+    };
+    const syncPreference = () => {
+      if (reducedMotion.matches) {
+        stopObserving();
+        return;
+      }
 
-    observer.observe(waveform);
-    document.addEventListener('visibilitychange', updatePlayback);
+      observer = new IntersectionObserver(([entry], source) => {
+        if (source !== observer) return;
+        isIntersecting = entry.isIntersecting;
+        updatePlayback();
+      });
+      observer.observe(waveform);
+      document.addEventListener('visibilitychange', updatePlayback);
+    };
+
+    syncPreference();
+    reducedMotion.addEventListener('change', syncPreference);
 
     return () => {
-      observer.disconnect();
-      document.removeEventListener('visibilitychange', updatePlayback);
+      reducedMotion.removeEventListener('change', syncPreference);
+      stopObserving();
     };
-  }, []);
+  }, [animate]);
 
   return (
     <div ref={waveformRef} aria-hidden="true" className={`voice-waveform ${className}`.trim()}>

@@ -85,24 +85,43 @@
 
   .site-section {
     padding-block: clamp(5rem, 7vw, 6.5rem);
-    scroll-margin-top: 5rem;
   }
 
-  .scroll-reveal.is-revealed {
-    animation: scroll-reveal var(--reveal-duration, 450ms) cubic-bezier(0.2, 0.7, 0.25, 1)
-      var(--reveal-delay, 0ms) both;
-  }
+  @media (prefers-reduced-motion: no-preference) {
+    .scroll-reveal.is-revealed:not(.reveal-stagger) {
+      animation: scroll-reveal var(--reveal-duration, 220ms) cubic-bezier(0.2, 0.7, 0.25, 1)
+        var(--reveal-delay, 0ms) both;
+    }
 
-  .reveal-stagger.is-revealed > article {
-    animation: scroll-reveal 400ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
-  }
+    .reveal-stagger.is-revealed > article {
+      animation: scroll-reveal 220ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+    }
 
-  .reveal-stagger.is-revealed > article:nth-of-type(2) {
-    animation-delay: calc(var(--reveal-delay, 0ms) + 45ms);
-  }
+    .reveal-stagger.is-revealed > article:nth-of-type(2) {
+      animation-delay: calc(var(--reveal-delay, 0ms) + 45ms);
+    }
 
-  .reveal-stagger.is-revealed > article:nth-of-type(3) {
-    animation-delay: calc(var(--reveal-delay, 0ms) + 90ms);
+    .reveal-stagger.is-revealed > article:nth-of-type(3) {
+      animation-delay: calc(var(--reveal-delay, 0ms) + 90ms);
+    }
+
+    .voice-waveform.is-active .voice-waveform__bar {
+      animation: voice-wave 1.9s ease-in-out infinite alternate;
+    }
+
+    .recording-indicator.is-live::after {
+      animation: recording-ring 1.8s ease-out infinite;
+      border: 1px solid var(--purple);
+      border-radius: inherit;
+      content: '';
+      inset: 0;
+      pointer-events: none;
+      position: absolute;
+    }
+
+    .confirmation-enter {
+      animation: confirmation-enter 200ms ease-out;
+    }
   }
 
   .motion-interactive {
@@ -115,7 +134,6 @@
   }
 
   .surface-panel {
-    border-radius: 14px;
     box-shadow: 0 12px 30px rgba(24, 61, 50, 0.08);
     transition:
       border-color 240ms ease-out,
@@ -169,17 +187,11 @@
   }
 
   .voice-waveform__bar {
-    animation: voice-wave 1.9s ease-in-out infinite alternate;
-    animation-play-state: paused;
     background: var(--forest);
     border-radius: 2px;
     flex: 0 0 2px;
     transform: scaleY(0.62);
     transform-origin: center;
-  }
-
-  .voice-waveform.is-active .voice-waveform__bar {
-    animation-play-state: running;
   }
 
   .voice-waveform__bar--accent {
@@ -199,38 +211,24 @@
     background: var(--purple);
   }
 
-  .recording-indicator.is-live::after {
-    animation: recording-ring 1.8s ease-out infinite;
-    border: 1px solid var(--purple);
-    border-radius: inherit;
-    content: '';
-    inset: 0;
-    pointer-events: none;
-    position: absolute;
-  }
-
-  .voice-demo__transcript,
-  .voice-demo__interpretation,
-  .voice-demo__confirmation {
-    animation-duration: 18s;
-    animation-iteration-count: infinite;
-    animation-timing-function: ease-in-out;
-  }
-
-  .voice-demo__transcript {
-    animation-name: voice-demo-transcript;
-  }
-
-  .voice-demo__interpretation {
-    animation-name: voice-demo-interpretation;
-  }
-
-  .voice-demo__confirmation {
-    animation-name: voice-demo-confirmation;
-  }
-
   @media (hover: hover) {
-    .motion-interactive:hover {
+    .surface-panel:hover {
+      border-color: rgba(24, 61, 50, 0.32);
+      box-shadow: 0 16px 36px rgba(24, 61, 50, 0.12);
+    }
+
+    .process-step:hover .process-step__number {
+      box-shadow: 0 4px 12px rgba(24, 61, 50, 0.14);
+    }
+
+    .use-case:hover {
+      border-color: var(--purple);
+    }
+  }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .motion-interactive:hover,
+    .process-step:hover .process-step__number {
       transform: translateY(-1px);
     }
 
@@ -240,20 +238,6 @@
 
     .motion-interactive:hover .arrow-motion {
       transform: translateX(3px);
-    }
-
-    .surface-panel:hover {
-      border-color: rgba(24, 61, 50, 0.32);
-      box-shadow: 0 16px 36px rgba(24, 61, 50, 0.12);
-    }
-
-    .process-step:hover .process-step__number {
-      box-shadow: 0 4px 12px rgba(24, 61, 50, 0.14);
-      transform: translateY(-1px);
-    }
-
-    .use-case:hover {
-      border-color: var(--purple);
     }
 
     .mic-motion:hover::before,
@@ -303,43 +287,15 @@
   }
 }
 
-@keyframes voice-demo-transcript {
-  0%,
-  8% {
-    border-color: rgba(167, 139, 206, 0.8);
+@keyframes confirmation-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
   }
 
-  18%,
-  100% {
-    border-color: rgba(24, 61, 50, 0.2);
-  }
-}
-
-@keyframes voice-demo-interpretation {
-  0%,
-  24%,
-  45%,
-  100% {
-    box-shadow: inset 0 1px 0 rgba(167, 139, 206, 0);
-  }
-
-  31%,
-  38% {
-    box-shadow: inset 0 1px 0 rgba(167, 139, 206, 0.75);
-  }
-}
-
-@keyframes voice-demo-confirmation {
-  0%,
-  52%,
-  72%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(167, 139, 206, 0);
-  }
-
-  59%,
-  66% {
-    box-shadow: 0 0 0 3px rgba(167, 139, 206, 0.32);
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

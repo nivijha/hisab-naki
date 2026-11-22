@@ -35,7 +35,7 @@ export function ProductDemo() {
         </SectionHeader>
 
         <ScrollReveal className="reveal-stagger relative grid gap-8 lg:grid-cols-3 lg:gap-10">
-          <div aria-hidden="true" className="absolute left-[16.67%] right-[16.67%] top-5 hidden h-px bg-forest/25 lg:block" />
+          <div aria-hidden="true" className="absolute left-5 right-[calc((100%_-_5rem)/3_-_1.25rem)] top-5 hidden h-px bg-forest/25 lg:block" />
           {steps.map((step) => {
             const Icon = step.icon;
 
@@ -45,11 +45,10 @@ export function ProductDemo() {
                   {step.number}
                 </div>
                 <div className="pb-2 pt-1 lg:mt-6 lg:pt-0">
-                  <div className="mb-3 flex items-center gap-2 text-forest">
-                    <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
-                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Step {step.number}</span>
-                  </div>
-                  <h3 className="mb-2 text-lg font-semibold tracking-tight text-forest">{step.title}</h3>
+                  <h3 className="mb-2 flex items-start gap-2 text-lg font-semibold tracking-tight text-forest">
+                    <Icon aria-hidden="true" className="mt-1.5 h-4 w-4 shrink-0" strokeWidth={1.8} />
+                    {step.title}
+                  </h3>
                   <p className="max-w-sm text-sm leading-6 text-muted sm:text-base">{step.body}</p>
                 </div>
               </article>

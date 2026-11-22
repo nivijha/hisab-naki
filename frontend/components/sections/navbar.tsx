@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Menu, Mic, X } from 'lucide-react';
 
@@ -13,6 +13,22 @@ const navLinks = [
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const [activeHref, setActiveHref] = useState('');
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !menuTrigger.current?.getClientRects().length) return;
+
+      event.preventDefault();
+      setOpen(false);
+      menuTrigger.current.focus({ preventScroll: true });
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [open]);
 
   useEffect(() => {
     const sections = navLinks
@@ -47,7 +63,7 @@ export function Navbar() {
     <nav aria-label="Main navigation" className="fixed inset-x-0 top-0 z-50 border-b border-beige/15 bg-forest">
       <div className="site-container">
         <div className="flex h-[72px] items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 text-beige" aria-label="HisabNaki home">
+          <Link href="/" className="flex min-h-11 items-center gap-3 text-beige lg:min-h-0" aria-label="HisabNaki home">
             <span className="mic-motion flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
               <Mic aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={2} />
             </span>
@@ -74,8 +90,9 @@ export function Navbar() {
           </div>
 
           <button
+            ref={menuTrigger}
             type="button"
-            className="flex h-11 w-11 items-center justify-center text-beige transition-colors hover:bg-forest-light md:hidden"
+            className="flex h-11 w-11 items-center justify-center text-beige transition-colors hover:bg-forest-light focus-visible:outline-beige md:hidden"
             onClick={() => setOpen((value) => !value)}
             aria-label={open ? 'Close menu' : 'Open menu'}
             aria-expanded={open}
@@ -91,7 +108,11 @@ export function Navbar() {
           <button
             type="button"
             aria-label="Close navigation"
-            onClick={() => setOpen(false)}
+            tabIndex={-1}
+            onClick={() => {
+              setOpen(false);
+              menuTrigger.current?.focus({ preventScroll: true });
+            }}
             className="fixed inset-x-0 bottom-0 top-[72px] z-0 bg-forest md:hidden"
           />
           <div id="mobile-navigation" className="absolute inset-x-0 top-full z-10 border-t border-beige/15 bg-forest px-5 pb-5 pt-2 md:hidden">

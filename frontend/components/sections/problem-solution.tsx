@@ -30,7 +30,7 @@ export function ProblemSolution() {
         </div>
 
         <div className="min-w-0">
-          <div className="surface-panel border border-beige/20 bg-beige p-5 text-forest sm:p-7">
+          <div className="surface-panel rounded-md border border-beige/20 bg-beige p-5 text-forest sm:p-7">
             <div className="flex flex-wrap items-end justify-between gap-4 border-b border-forest/20 pb-5">
               <div>
                 <div className="mb-3 flex items-center gap-2 text-muted">
