@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { HttpError } from '../../../middleware/authenticate.js';
 import { interpretTranscript } from '../../../services/ai/intentService.js';
 import {
   buildPreview,
@@ -67,7 +68,7 @@ describe('preview service', () => {
     assert.strictEqual(preview.readyForConfirmation, false);
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
-    const result = await service.confirmPreview(preview.id, committer);
+    const result = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'MISSING_FIELDS');
     assert.strictEqual(commitCalls, 0);
@@ -79,7 +80,7 @@ describe('preview service', () => {
     assert.strictEqual(preview.readyForConfirmation, false);
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
-    const result = await service.confirmPreview(preview.id, committer);
+    const result = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'LOW_CONFIDENCE');
     assert.strictEqual(commitCalls, 0);
@@ -98,7 +99,7 @@ describe('preview service', () => {
     assert.strictEqual(preview.type, undefined);
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
-    const result = await service.confirmPreview(preview.id, committer);
+    const result = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'READ_ONLY_INTENT');
     assert.strictEqual(commitCalls, 0);
@@ -110,7 +111,7 @@ describe('preview service', () => {
     const calls: CreateTransactionInput[] = [];
     const committer: TransactionCommitter = async (input) => { calls.push(input); return { committed: true }; };
 
-    const result = await service.confirmPreview(preview.id, committer);
+    const result = await service.confirmPreview(preview.id, committer, CONTEXT);
 
     assert.strictEqual(result.ok, true);
     assert.strictEqual(calls.length, 1);
@@ -130,9 +131,9 @@ describe('preview service', () => {
     const preview = service.createPreview(makeParsed(), CONTEXT);
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
-    const first = await service.confirmPreview(preview.id, committer);
+    const first = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(first.ok, true);
-    const second = await service.confirmPreview(preview.id, committer);
+    const second = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(second.ok, false);
     if (!second.ok) assert.strictEqual(second.code, 'ALREADY_CONFIRMED');
     assert.strictEqual(commitCalls, 1);
@@ -141,12 +142,12 @@ describe('preview service', () => {
   it('8. cancelled previews cannot be confirmed', async () => {
     const service = createPreviewService(new InMemoryPreviewStore());
     const preview = service.createPreview(makeParsed(), CONTEXT);
-    const cancelled = service.cancelPreview(preview.id);
+    const cancelled = service.cancelPreview(preview.id, CONTEXT);
     assert.ok(cancelled);
     assert.strictEqual(cancelled.state, 'cancelled');
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
-    const result = await service.confirmPreview(preview.id, committer);
+    const result = await service.confirmPreview(preview.id, committer, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'CANCELLED');
     assert.strictEqual(commitCalls, 0);
@@ -199,6 +200,52 @@ describe('preview service - tenant context', () => {
     assert.notStrictEqual(preview.businessId, preview.createdByUserId);
   });
 
+  it('get and cancel reject previews owned by another business', async () => {
+    const service = createPreviewService(new InMemoryPreviewStore());
+    const preview = service.createPreview(makeParsed(), CONTEXT);
+
+    assert.deepStrictEqual(
+      service.getPreviewResult(preview.id, OTHER_CONTEXT),
+      { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' }
+    );
+    assert.strictEqual(service.getPreview(preview.id, OTHER_CONTEXT), undefined);
+    assert.deepStrictEqual(
+      service.cancelPreviewResult(preview.id, OTHER_CONTEXT),
+      { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' }
+    );
+    assert.strictEqual(service.cancelPreview(preview.id, OTHER_CONTEXT), undefined);
+    assert.strictEqual(service.getPreview(preview.id, CONTEXT)?.id, preview.id);
+  });
+
+  it('confirm rejects a missing context', async () => {
+    const service = createPreviewService(new InMemoryPreviewStore());
+    const preview = service.createPreview(makeParsed(), CONTEXT);
+    let commitCalls = 0;
+    const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
+
+    const result = await service.confirmPreview(preview.id, committer, undefined as unknown as typeof CONTEXT);
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) assert.strictEqual(result.code, 'CONTEXT_MISMATCH');
+    assert.strictEqual(commitCalls, 0);
+  });
+
+  it('rejects new previews with a 503 when the store is full', () => {
+    const service = createPreviewService(new InMemoryPreviewStore({ maxPreviews: 2 }));
+    service.createPreview(makeParsed(), CONTEXT);
+    service.createPreview(makeParsed(), CONTEXT);
+
+    assert.throws(
+      () => service.createPreview(makeParsed(), CONTEXT),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 503);
+        assert.match(error.message, /Preview store is full/);
+        return true;
+      }
+    );
+  });
+
   it('rejects creation without tenant context', () => {
     const service = createPreviewService(new InMemoryPreviewStore());
     assert.throws(
@@ -238,7 +285,7 @@ describe('preview service - tenant context', () => {
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'CONTEXT_MISMATCH');
     assert.strictEqual(commitCalls, 0);
-    assert.strictEqual(service.getPreview(preview.id)?.state, 'pending');
+    assert.strictEqual(service.getPreview(preview.id, CONTEXT)?.state, 'pending');
   });
 
   it('a mismatched creator ID cannot confirm the preview', async () => {
@@ -255,7 +302,7 @@ describe('preview service - tenant context', () => {
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'CONTEXT_MISMATCH');
     assert.strictEqual(commitCalls, 0);
-    assert.strictEqual(service.getPreview(preview.id)?.state, 'pending');
+    assert.strictEqual(service.getPreview(preview.id, CONTEXT)?.state, 'pending');
   });
 
   it('a fully mismatched context cannot confirm the preview', async () => {

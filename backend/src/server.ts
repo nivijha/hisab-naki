@@ -15,8 +15,19 @@ dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
-const corsOrigin = process.env.CORS_ORIGIN ?? '*';
-app.use(cors({ origin: corsOrigin }));
+const configuredOrigin = process.env.CORS_ORIGIN;
+if (process.env.NODE_ENV === 'production' && (!configuredOrigin || configuredOrigin === '*')) {
+  throw new Error('CORS_ORIGIN must be set to a specific frontend origin in production.');
+}
+const corsOrigin = configuredOrigin ?? '*';
+
+app.use(
+  cors({
+    origin: corsOrigin,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-business-id'],
+  })
+);
 app.use(express.json());
 
 app.get('/', (_req, res) => {

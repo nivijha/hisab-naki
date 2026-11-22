@@ -10,6 +10,7 @@ import {
   type PreviewTenantContext,
 } from '../services/preview/previewStore.js';
 import { requireAuth } from '../middleware/authenticate.js';
+import { logger } from '../utils/logger.js';
 
 // Process-local: previews are lost on restart and are not shared across instances.
 const previewService = createPreviewService(new InMemoryPreviewStore());
@@ -63,10 +64,6 @@ function respondToConfirmation(res: Response, result: ConfirmResult) {
   });
 }
 
-function isForeignPreview(result: PreviewResult, businessId: string): boolean {
-  return result.ok && result.preview.businessId !== businessId;
-}
-
 export function createPreviewController(services: PreviewControllerServices = defaultServices) {
   async function createPreviewHandler(req: Request, res: Response) {
     const { businessId, userId } = requireAuth(req);
@@ -80,23 +77,17 @@ export function createPreviewController(services: PreviewControllerServices = de
   }
 
   async function getPreviewHandler(req: Request, res: Response) {
-    const { businessId } = requireAuth(req);
+    const { businessId, userId } = requireAuth(req);
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const result = services.previewService.getPreviewResult(id);
-    if (isForeignPreview(result, businessId)) {
-      return res.status(404).json({ ok: false, message: 'Invalid or unknown preview.' });
-    }
-    return respondWithResult(res, result);
+    const context: PreviewTenantContext = { businessId, createdByUserId: userId };
+    return respondWithResult(res, services.previewService.getPreviewResult(id, context));
   }
 
   async function cancelPreviewHandler(req: Request, res: Response) {
-    const { businessId } = requireAuth(req);
+    const { businessId, userId } = requireAuth(req);
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const result = services.previewService.cancelPreviewResult(id);
-    if (isForeignPreview(result, businessId)) {
-      return res.status(404).json({ ok: false, message: 'Invalid or unknown preview.' });
-    }
-    return respondWithResult(res, result);
+    const context: PreviewTenantContext = { businessId, createdByUserId: userId };
+    return respondWithResult(res, services.previewService.cancelPreviewResult(id, context));
   }
 
   async function confirmPreviewHandler(req: Request, res: Response) {
@@ -104,6 +95,11 @@ export function createPreviewController(services: PreviewControllerServices = de
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
     const context: PreviewTenantContext = { businessId, createdByUserId: userId };
     const result = await services.previewService.confirmPreview(id, services.createTransaction, context);
+    logger.info(result.ok ? 'preview.confirmed' : 'preview.confirm_failed', {
+      previewId: id,
+      businessId,
+      code: result.ok ? undefined : result.code,
+    });
     return respondToConfirmation(res, result);
   }
 

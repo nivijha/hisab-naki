@@ -3,8 +3,10 @@ import assert from 'node:assert';
 import { createPreviewController, type PreviewControllerServices } from '../../controllers/previewController.js';
 import { TEST_AUTH, makeReq, makeRes } from '../helpers/http.js';
 
+type PreviewTenantContextMock = { businessId: string; createdByUserId: string };
+
 function makeServices(preview: Record<string, unknown> | null = null) {
-  const calls: Record<string, unknown[][]> = { create: [], confirm: [] };
+  const calls: Record<string, unknown[][]> = { create: [], confirm: [], get: [], cancel: [] };
   const defaultPreview = preview ?? {
     id: 'preview-1',
     businessId: 'biz-1',
@@ -12,14 +14,30 @@ function makeServices(preview: Record<string, unknown> | null = null) {
     state: 'pending',
     readyForConfirmation: true,
   };
+  const notOwner = (context?: PreviewTenantContextMock) => {
+    const previewBusinessId = (defaultPreview as { businessId: string }).businessId;
+    return !context || context.businessId !== previewBusinessId;
+  };
   const services = {
     previewService: {
       createPreviewFromTranscript: async (...args: unknown[]) => {
         calls.create.push(args);
         return defaultPreview;
       },
-      getPreviewResult: () => ({ ok: true, preview: defaultPreview }),
-      cancelPreviewResult: () => ({ ok: true, preview: { ...defaultPreview, state: 'cancelled' } }),
+      getPreviewResult: (id: string, context?: PreviewTenantContextMock) => {
+        calls.get.push([id, context]);
+        if (notOwner(context)) {
+          return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
+        }
+        return { ok: true, preview: defaultPreview };
+      },
+      cancelPreviewResult: (id: string, context?: PreviewTenantContextMock) => {
+        calls.cancel.push([id, context]);
+        if (notOwner(context)) {
+          return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
+        }
+        return { ok: true, preview: { ...defaultPreview, state: 'cancelled' } };
+      },
       confirmPreview: async (...args: unknown[]) => {
         calls.confirm.push(args);
         return { ok: true, preview: { ...defaultPreview, state: 'confirmed' }, result: {} };
@@ -44,6 +62,30 @@ describe('preview controller - tenant context', () => {
     assert.strictEqual(res.statusCode, 201);
     assert.strictEqual(calls.create[0][0], 'Raju ko 500 udhaar diya');
     assert.deepStrictEqual(calls.create[0][1], { businessId: 'biz-1', createdByUserId: 'user-1' });
+  });
+
+  it('getPreviewHandler passes the authenticated context to the service', async () => {
+    const { services, calls } = makeServices();
+    const controller = createPreviewController(services);
+
+    await controller.getPreviewHandler(
+      makeReq({ auth: TEST_AUTH, params: { id: 'preview-1' } }),
+      makeRes()
+    );
+
+    assert.deepStrictEqual(calls.get[0], ['preview-1', { businessId: 'biz-1', createdByUserId: 'user-1' }]);
+  });
+
+  it('cancelPreviewHandler passes the authenticated context to the service', async () => {
+    const { services, calls } = makeServices();
+    const controller = createPreviewController(services);
+
+    await controller.cancelPreviewHandler(
+      makeReq({ auth: TEST_AUTH, params: { id: 'preview-1' } }),
+      makeRes()
+    );
+
+    assert.deepStrictEqual(calls.cancel[0], ['preview-1', { businessId: 'biz-1', createdByUserId: 'user-1' }]);
   });
 
   it('confirmation passes the authenticated context to the service', async () => {

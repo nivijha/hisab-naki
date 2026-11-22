@@ -27,6 +27,14 @@ export function calculateOutstandingAmount(
   }, new Prisma.Decimal(0));
 }
 
+export function normalizeAmount(value: Prisma.Decimal | number): Prisma.Decimal {
+  const decimal = value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
+  if (!decimal.toDecimalPlaces(2).equals(decimal)) {
+    throw new Error('Amount supports at most two decimal places.');
+  }
+  return decimal.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+}
+
 export function toDisplayNumber(amount: Prisma.Decimal | number): number {
   return typeof amount === 'number' ? amount : amount.toNumber();
 }

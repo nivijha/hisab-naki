@@ -1,12 +1,16 @@
 import { Prisma } from '@prisma/client';
+import { HttpError } from '../../middleware/authenticate.js';
+import { logger } from '../../utils/logger.js';
 import {
   PrismaTransactionRepository,
   type TransactionRepository,
+  type TransactionWithCustomer,
   type CustomerTransactionGroup,
 } from '../../repositories/transactionRepository.js';
 import {
   calculateOutstandingAmount,
   formatCurrency,
+  normalizeAmount,
   toCurrencyText,
   toDisplayNumber,
 } from '../../utils/ledger.js';
@@ -23,6 +27,7 @@ export type CreateTransactionInput = {
   amount: number;
   type: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
   description?: string;
+  idempotencyKey?: string;
 };
 
 export type TransactionHistoryFilters = {
@@ -56,29 +61,60 @@ const defaultGateway: TransactionCustomerGateway = {
   getCustomerByName,
 };
 
+function canonicalCustomerName(name: string): string {
+  return name.trim();
+}
+
+function matchesIdempotentRequest(
+  transaction: TransactionWithCustomer,
+  input: CreateTransactionInput
+): boolean {
+  return (
+    transaction.customer?.name === canonicalCustomerName(input.customerName) &&
+    new Prisma.Decimal(transaction.amount).equals(normalizeAmount(input.amount)) &&
+    transaction.type === input.type &&
+    (transaction.description ?? 'Ledger update') === (input.description ?? 'Ledger update')
+  );
+}
+
 export function createTransactionService(
   repository: TransactionRepository,
   gateway: TransactionCustomerGateway = defaultGateway
 ) {
   async function createTransaction(input: CreateTransactionInput) {
+    const normalizedName = canonicalCustomerName(input.customerName);
+    const normalizedAmount = normalizeAmount(input.amount);
+
     const customer = await gateway.ensureCustomer(
       input.businessId,
       input.createdByUserId,
-      input.customerName
+      normalizedName
     );
 
-    const transaction = await repository.create({
+    const { transaction, created } = await repository.createIdempotent({
       businessId: input.businessId,
       createdByUserId: input.createdByUserId,
       customerId: customer.id,
       type: input.type,
-      amount: Math.round(input.amount),
+      amount: normalizedAmount,
       description: input.description ?? 'Ledger update',
+      idempotencyKey: input.idempotencyKey,
+    });
+
+    if (input.idempotencyKey && !matchesIdempotentRequest(transaction, input)) {
+      throw new HttpError(409, 'Idempotency key was reused with a different request payload.');
+    }
+
+    logger.info(created ? 'transaction.created' : 'transaction.idempotency_replayed', {
+      transactionId: transaction.id,
+      businessId: input.businessId,
+      type: input.type,
+      idempotencyKey: input.idempotencyKey,
     });
 
     return {
       transaction,
-      customer,
+      customer: transaction.customer ?? customer,
       outstandingBalance: toDisplayNumber(
         calculateOutstandingAmount(
           await repository.listForCustomer(customer.id, input.businessId)

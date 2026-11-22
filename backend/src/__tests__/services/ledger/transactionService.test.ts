@@ -1,11 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { Prisma } from '@prisma/client';
+import { HttpError } from '../../../middleware/authenticate.js';
 import type { Customer, Transaction } from '@prisma/client';
 import { createTransactionService, type TransactionCustomerGateway } from '../../../services/ledger/transactionService.js';
 import type {
   CreateTransactionRecordInput,
   CustomerTransactionGroup,
+  IdempotentCreateResult,
   TransactionHistoryPage,
   TransactionHistoryQuery,
   TransactionRepository,
@@ -79,9 +81,37 @@ class InMemoryTransactionRepository implements TransactionRepository {
       type: input.type,
       amount: new Prisma.Decimal(input.amount),
       description: input.description,
+      idempotencyKey: input.idempotencyKey ?? null,
     });
     this.rows.push(transaction);
     return { ...transaction, customer: this.customers.get(input.customerId) ?? null };
+  }
+
+  async createIdempotent(input: CreateTransactionRecordInput): Promise<IdempotentCreateResult> {
+    if (input.idempotencyKey) {
+      const existing = this.rows.find(
+        (t) => t.businessId === input.businessId && t.idempotencyKey === input.idempotencyKey
+      );
+      if (existing) {
+        return {
+          transaction: { ...existing, customer: this.customers.get(existing.customerId ?? '') ?? null },
+          created: false,
+        };
+      }
+    }
+    const created = await this.create(input);
+    return { transaction: created, created: true };
+  }
+
+  async findByIdempotencyKey(
+    businessId: string,
+    idempotencyKey: string
+  ): Promise<TransactionWithCustomer | null> {
+    const transaction = this.rows.find(
+      (t) => t.businessId === businessId && t.idempotencyKey === idempotencyKey
+    );
+    if (!transaction) return null;
+    return { ...transaction, customer: this.customers.get(transaction.customerId ?? '') ?? null };
   }
 
   async findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null> {
@@ -301,7 +331,7 @@ describe('transaction service - creation', () => {
     );
   });
 
-  it('existing amount rounding and default description are preserved', async () => {
+  it('fractional amounts are preserved exactly and the default description is set', async () => {
     const repo = new InMemoryTransactionRepository([makeCustomer()]);
     const { gateway } = makeGateway(repo);
     const service = createTransactionService(repo, gateway);
@@ -314,8 +344,64 @@ describe('transaction service - creation', () => {
       type: 'CREDIT',
     });
 
-    assert.strictEqual(result.transaction.amount.toNumber(), 101);
+    assert.ok(result.transaction.amount.equals(new Prisma.Decimal('100.60')));
     assert.strictEqual(result.transaction.description, 'Ledger update');
+  });
+
+  it('fractional amounts with up to two decimals are stored without changing value', async () => {
+    for (const amount of [450.75, 25.25, 100.50]) {
+      const repo = new InMemoryTransactionRepository([makeCustomer()]);
+      const { gateway } = makeGateway(repo);
+      const service = createTransactionService(repo, gateway);
+
+      const result = await service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount,
+        type: 'CREDIT',
+      });
+
+      assert.ok(result.transaction.amount.equals(new Prisma.Decimal(amount)), `${amount} preserved`);
+      assert.ok(
+        new Prisma.Decimal(repo.createCalls[0].amount).equals(new Prisma.Decimal(amount)),
+        `${amount} stored without changing value`
+      );
+    }
+  });
+
+  it('fractional CREDIT amounts produce fractional outstanding balance', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 450.75,
+      type: 'CREDIT',
+    });
+
+    assert.strictEqual(result.outstandingBalance, 450.75);
+  });
+
+  it('unsupported amount precision is rejected', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 100.555,
+        type: 'CREDIT',
+      }),
+      /Amount supports at most two decimal places/
+    );
+    assert.strictEqual(repo.rows.length, 0);
   });
 });
 
@@ -454,6 +540,8 @@ describe('transaction service - outstanding and errors', () => {
   it('repository errors propagate through the service', async () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('DB down'); },
+      createIdempotent: async () => { throw new Error('DB down'); },
+      findByIdempotencyKey: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
       listForBusiness: async () => { throw new Error('DB down'); },
       listForCustomer: async () => { throw new Error('DB down'); },
@@ -495,5 +583,94 @@ describe('transaction service - outstanding and errors', () => {
     const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
     assert.strictEqual(typeof total.totalOutstanding, 'number');
     assert.strictEqual(typeof total.totalOutstandingText, 'string');
+  });
+});
+
+describe('transaction service - idempotency', () => {
+  const baseInput = {
+    businessId: BUSINESS_ID,
+    createdByUserId: CREATOR_ID,
+    customerName: 'Raju',
+    amount: 450,
+    type: 'CREDIT' as const,
+    idempotencyKey: 'key-1',
+  };
+
+  function setup() {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    return { repo, service: createTransactionService(repo, gateway) };
+  }
+
+  it('first request creates a transaction and stores the key', async () => {
+    const { repo, service } = setup();
+    const result = await service.createTransaction(baseInput);
+    assert.strictEqual(repo.rows.length, 1);
+    assert.strictEqual(repo.rows[0].idempotencyKey, 'key-1');
+    assert.strictEqual(result.transaction.id, repo.rows[0].id);
+  });
+
+  it('duplicate request with identical payload returns the original transaction', async () => {
+    const { repo, service } = setup();
+    const first = await service.createTransaction(baseInput);
+    const second = await service.createTransaction(baseInput);
+    assert.strictEqual(repo.rows.length, 1);
+    assert.strictEqual(repo.createCalls.length, 1);
+    assert.strictEqual(second.transaction.id, first.transaction.id);
+  });
+
+  it('concurrent duplicate requests create only one transaction', async () => {
+    const { repo, service } = setup();
+    const [a, b] = await Promise.all([
+      service.createTransaction(baseInput),
+      service.createTransaction(baseInput),
+    ]);
+    assert.strictEqual(repo.rows.length, 1);
+    assert.strictEqual(a.transaction.id, b.transaction.id);
+  });
+
+  it('same key reused with a different payload is rejected with 409', async () => {
+    const { repo, service } = setup();
+    await service.createTransaction(baseInput);
+    await assert.rejects(
+      () => service.createTransaction({ ...baseInput, amount: 999 }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 409);
+        assert.match(error.message, /different request payload/);
+        return true;
+      }
+    );
+    assert.strictEqual(repo.rows.length, 1);
+  });
+
+  it('different keys create separate transactions', async () => {
+    const { repo, service } = setup();
+    await service.createTransaction(baseInput);
+    await service.createTransaction({ ...baseInput, idempotencyKey: 'key-2', amount: 100 });
+    assert.strictEqual(repo.rows.length, 2);
+  });
+
+  it('different businesses can use the same key independently', async () => {
+    const repo = new InMemoryTransactionRepository([
+      makeCustomer(),
+      makeCustomer({ id: 'c-2', businessId: OTHER_BUSINESS_ID, createdByUserId: OTHER_CREATOR_ID }),
+    ]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction(baseInput);
+    await service.createTransaction({
+      ...baseInput,
+      businessId: OTHER_BUSINESS_ID,
+      createdByUserId: OTHER_CREATOR_ID,
+      customerName: 'Raju',
+    });
+
+    assert.strictEqual(repo.rows.length, 2);
+    assert.strictEqual(
+      repo.rows.filter((row) => row.idempotencyKey === 'key-1').length,
+      2
+    );
   });
 });

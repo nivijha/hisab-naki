@@ -8,6 +8,7 @@ import {
   TokenError,
 } from './tokenService.js';
 import { verifyPassword } from './passwordService.js';
+import { logger } from '../../utils/logger.js';
 import {
   PrismaMembershipLister,
   type MembershipLister,
@@ -84,6 +85,9 @@ export function createAuthService(dependencies: AuthServiceDependencies = {}) {
     const passwordMatches = await verify(password, storedHash);
 
     if (!user || !user.passwordHash || !passwordMatches) {
+      logger.warn('auth.login_failed', {
+        reason: !user ? 'unknown_account' : !user.passwordHash ? 'no_password' : 'wrong_password',
+      });
       throw new HttpError(401, 'Invalid credentials.');
     }
 
