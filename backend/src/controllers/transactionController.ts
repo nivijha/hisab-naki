@@ -9,7 +9,8 @@ import {
   getTransactionHistory,
   getTransactionsForUser,
 } from '../services/ledger/transactionService.js';
-import { requireAuth } from '../middleware/authenticate.js';
+import { HttpError, requireAuth } from '../middleware/authenticate.js';
+import { logger } from '../utils/logger.js';
 
 export type TransactionControllerServices = {
   createTransaction: typeof createTransaction;
@@ -39,7 +40,7 @@ export function createTransactionController(
   async function createTransactionHandler(req: Request, res: Response) {
     try {
       const { businessId, userId } = requireAuth(req);
-      const { intent, customerName, amount, description, type } = req.body ?? {};
+      const { intent, customerName, amount, description, type, idempotencyKey } = req.body ?? {};
 
       if (intent === 'GET_BALANCE' && customerName) {
         const balance = await services.getCustomerBalanceForName(businessId, String(customerName));
@@ -105,10 +106,11 @@ export function createTransactionController(
       const row = await services.createTransaction({
         businessId,
         createdByUserId: userId,
-        customerName: String(customerName),
+        customerName: String(customerName).trim(),
         amount: Number(amount),
         type: resolvedType,
         description: description ? String(description) : 'Ledger update',
+        idempotencyKey: idempotencyKey ? String(idempotencyKey) : undefined,
       });
 
       return res.status(201).json({
@@ -117,8 +119,13 @@ export function createTransactionController(
         responseText: `${row.customer.name} ke account mein ${row.outstandingBalance} ka balance hai.`,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not process the transaction.';
-      return res.status(500).json({ ok: false, message });
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ ok: false, message: error.message });
+      }
+      logger.error('transaction.create_failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return res.status(500).json({ ok: false, message: 'Could not process the transaction.' });
     }
   }
 

@@ -8,6 +8,7 @@ import type {
   TransactionHistoryQuery,
   TransactionHistoryPage,
   CreateTransactionRecordInput,
+  IdempotentCreateResult,
 } from '../../../repositories/transactionRepository.js';
 import { Prisma } from '@prisma/client';
 import type { Transaction, TransactionType } from '@prisma/client';
@@ -58,6 +59,17 @@ class InMemoryDashboardRepository implements TransactionRepository {
   readonly businessReads: string[] = [];
 
   async create(_input: CreateTransactionRecordInput): Promise<TransactionWithCustomer> {
+    throw new Error('not used');
+  }
+
+  async createIdempotent(_input: CreateTransactionRecordInput): Promise<IdempotentCreateResult> {
+    throw new Error('not used');
+  }
+
+  async findByIdempotencyKey(
+    _businessId: string,
+    _idempotencyKey: string
+  ): Promise<TransactionWithCustomer | null> {
     throw new Error('not used');
   }
 
@@ -220,6 +232,8 @@ describe('dashboard service', () => {
   it('8. repository error propagation', async () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('DB down'); },
+      createIdempotent: async () => { throw new Error('DB down'); },
+      findByIdempotencyKey: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
       listForBusiness: async () => { throw new Error('DB down'); },
       listForCustomer: async () => { throw new Error('DB down'); },
@@ -571,6 +585,8 @@ describe('dashboard service - error handling', () => {
   it('propagates listCustomerTransactionGroups errors', async () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('not used'); },
+      createIdempotent: async () => { throw new Error('not used'); },
+      findByIdempotencyKey: async () => { throw new Error('not used'); },
       findById: async () => { throw new Error('not used'); },
       listForBusiness: async () => [],
       listForCustomer: async () => [],

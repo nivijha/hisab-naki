@@ -4,6 +4,7 @@ export type RateLimiterOptions = {
   windowMs?: number;
   max?: number;
   now?: () => number;
+  message?: string;
 };
 
 function positiveIntEnv(name: string, fallback: number): number {
@@ -43,7 +44,7 @@ export function createLoginRateLimiter(options: RateLimiterOptions = {}) {
     if (existing.count >= max) {
       res.status(429).json({
         ok: false,
-        message: 'Too many login attempts. Please try again later.',
+        message: options.message ?? 'Too many requests. Please try again later.',
       });
       return;
     }
@@ -53,4 +54,12 @@ export function createLoginRateLimiter(options: RateLimiterOptions = {}) {
   };
 }
 
-export const loginRateLimiter = createLoginRateLimiter();
+export const loginRateLimiter = createLoginRateLimiter({
+  message: 'Too many login attempts. Please try again later.',
+});
+
+export const aiRateLimiter = createLoginRateLimiter({
+  max: positiveIntEnv('AI_RATE_LIMIT_MAX', 30),
+  windowMs: positiveIntEnv('AI_RATE_LIMIT_WINDOW_MS', 60 * 1000),
+  message: 'Too many interpretation requests. Please try again later.',
+});

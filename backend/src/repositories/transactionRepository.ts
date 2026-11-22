@@ -1,6 +1,6 @@
+import { Prisma } from '@prisma/client';
 import type {
   Customer,
-  Prisma,
   PrismaClient,
   Transaction,
   TransactionType,
@@ -16,6 +16,12 @@ export type CreateTransactionRecordInput = {
   type: TransactionType;
   amount: Prisma.Decimal | number;
   description: string;
+  idempotencyKey?: string;
+};
+
+export type IdempotentCreateResult = {
+  transaction: TransactionWithCustomer;
+  created: boolean;
 };
 
 export type CustomerTransactionGroup = {
@@ -39,7 +45,12 @@ export type TransactionHistoryPage = {
 
 export interface TransactionRepository {
   create(input: CreateTransactionRecordInput): Promise<TransactionWithCustomer>;
+  createIdempotent(input: CreateTransactionRecordInput): Promise<IdempotentCreateResult>;
   findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null>;
+  findByIdempotencyKey(
+    businessId: string,
+    idempotencyKey: string
+  ): Promise<TransactionWithCustomer | null>;
   listForBusiness(businessId: string): Promise<TransactionWithCustomer[]>;
   listForCustomer(customerId: string, businessId: string): Promise<Transaction[]>;
   listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]>;
@@ -65,9 +76,69 @@ export class PrismaTransactionRepository implements TransactionRepository {
     });
   }
 
+  async createIdempotent(input: CreateTransactionRecordInput): Promise<IdempotentCreateResult> {
+    const key = input.idempotencyKey;
+    if (!key) {
+      return { transaction: await this.create(input), created: true };
+    }
+
+    const { createHash } = await import('node:crypto');
+    const digest = createHash('sha256').update(`${input.businessId}:${key}`).digest();
+    const lockKey = digest.readBigInt64BE(0);
+
+    return this.client.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+
+      const existing = await tx.transaction.findFirst({
+        where: { businessId: input.businessId, idempotencyKey: key },
+        include: { customer: true },
+      });
+      if (existing) {
+        return { transaction: existing, created: false };
+      }
+
+      try {
+        const created = await tx.transaction.create({
+          data: {
+            businessId: input.businessId,
+            createdByUserId: input.createdByUserId,
+            customerId: input.customerId,
+            type: input.type,
+            amount: input.amount,
+            description: input.description,
+            idempotencyKey: key,
+          },
+          include: { customer: true },
+        });
+        return { transaction: created, created: true };
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          const raced = await tx.transaction.findFirst({
+            where: { businessId: input.businessId, idempotencyKey: key },
+            include: { customer: true },
+          });
+          if (raced) {
+            return { transaction: raced, created: false };
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
   findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null> {
     return this.client.transaction.findFirst({
       where: { id: transactionId, businessId },
+      include: { customer: true },
+    });
+  }
+
+  findByIdempotencyKey(
+    businessId: string,
+    idempotencyKey: string
+  ): Promise<TransactionWithCustomer | null> {
+    return this.client.transaction.findFirst({
+      where: { businessId, idempotencyKey },
       include: { customer: true },
     });
   }

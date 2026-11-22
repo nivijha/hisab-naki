@@ -39,10 +39,19 @@ export type TransactionPreview = {
   createdAt: string;
 };
 
+export class PreviewStoreFullError extends Error {
+  constructor() {
+    super('Preview store is full.');
+    this.name = 'PreviewStoreFullError';
+  }
+}
+
 export interface PreviewStore {
   create(preview: TransactionPreview): void;
   get(id: string): TransactionPreview | undefined;
   save(preview: TransactionPreview): void;
+  pruneExpired(isExpired: (preview: TransactionPreview) => boolean): number;
+  size(): number;
   // Atomically transition state. Implementations must perform the check and
   // update without any asynchronous gap, so only one caller can claim a preview.
   claim(id: string): TransactionPreview | undefined;
@@ -50,11 +59,38 @@ export interface PreviewStore {
   complete(id: string): TransactionPreview | undefined;
 }
 
+export type InMemoryPreviewStoreOptions = {
+  maxPreviews?: number;
+};
+
 export class InMemoryPreviewStore implements PreviewStore {
   private readonly previews = new Map<string, TransactionPreview>();
+  private readonly maxPreviews: number;
+
+  constructor(options: InMemoryPreviewStoreOptions = {}) {
+    this.maxPreviews = options.maxPreviews ?? 1000;
+  }
 
   create(preview: TransactionPreview): void {
+    if (this.previews.size >= this.maxPreviews) {
+      throw new PreviewStoreFullError();
+    }
     this.previews.set(preview.id, preview);
+  }
+
+  pruneExpired(isExpired: (preview: TransactionPreview) => boolean): number {
+    let removed = 0;
+    for (const [id, preview] of this.previews) {
+      if (isExpired(preview)) {
+        this.previews.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  size(): number {
+    return this.previews.size;
   }
 
   get(id: string): TransactionPreview | undefined {

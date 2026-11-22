@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { createTransactionController, type TransactionControllerServices } from '../../controllers/transactionController.js';
+import { HttpError } from '../../middleware/authenticate.js';
 import { TEST_AUTH, makeReq, makeRes } from '../helpers/http.js';
 
 function makeServices() {
@@ -161,5 +162,43 @@ describe('transaction controller - tenant context', () => {
       'businessName', 'newCredit', 'paymentsReceived', 'recentTransactions',
       'todaysExpenses', 'todaysSales', 'totalOutstanding',
     ]);
+  });
+});
+
+describe('transaction controller - error handling', () => {
+  it('internal errors do not leak their messages and map to a generic 500', async () => {
+    const services = {
+      ...makeServices(),
+      createTransaction: async () => { throw new Error('db password=hunter2'); },
+    } as unknown as TransactionControllerServices;
+    const controller = createTransactionController(services);
+    const res = makeRes();
+
+    await controller.createTransactionHandler(
+      makeReq({ auth: TEST_AUTH, body: { customerName: 'Raju', amount: 100, type: 'CREDIT' } }),
+      res
+    );
+
+    assert.strictEqual(res.statusCode, 500);
+    assert.deepStrictEqual(res.body, { ok: false, message: 'Could not process the transaction.' });
+  });
+
+  it('HttpError status codes and messages are preserved', async () => {
+    const services = {
+      ...makeServices(),
+      createTransaction: async () => {
+        throw new HttpError(409, 'Idempotency key was reused with a different request payload.');
+      },
+    } as unknown as TransactionControllerServices;
+    const controller = createTransactionController(services);
+    const res = makeRes();
+
+    await controller.createTransactionHandler(
+      makeReq({ auth: TEST_AUTH, body: { customerName: 'Raju', amount: 100, type: 'CREDIT' } }),
+      res
+    );
+
+    assert.strictEqual(res.statusCode, 409);
+    assert.deepStrictEqual(res.body, { ok: false, message: 'Idempotency key was reused with a different request payload.' });
   });
 });

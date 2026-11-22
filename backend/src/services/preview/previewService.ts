@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { ParsedIntent } from '../ai/intentService.js';
 import { interpretTranscript } from '../ai/intentService.js';
 import type { CreateTransactionInput } from '../ledger/transactionService.js';
+import { HttpError } from '../../middleware/authenticate.js';
+import { PreviewStoreFullError } from './previewStore.js';
 import {
   READ_INTENTS,
   WRITE_INTENTS,
@@ -113,8 +115,16 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     parsed: ParsedIntent,
     context: PreviewTenantContext
   ): TransactionPreview {
+    store.pruneExpired(isExpired);
     const preview = buildPreview(parsed, context, now);
-    store.create(preview);
+    try {
+      store.create(preview);
+    } catch (error) {
+      if (error instanceof PreviewStoreFullError) {
+        throw new HttpError(503, 'Preview store is full. Please try again later.');
+      }
+      throw error;
+    }
     return preview;
   }
 
@@ -127,9 +137,13 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     return interpretTranscript(transcript).then((parsed) => createPreview(parsed, context));
   }
 
-  function getPreviewResult(id: string): PreviewResult {
+  function isOwnedBy(preview: TransactionPreview, context: PreviewTenantContext): boolean {
+    return preview.businessId === context.businessId;
+  }
+
+  function getPreviewResult(id: string, context: PreviewTenantContext): PreviewResult {
     const preview = store.get(id);
-    if (!preview) {
+    if (!preview || !isOwnedBy(preview, context)) {
       return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
     }
     if (isExpired(preview)) {
@@ -138,14 +152,14 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     return { ok: true, preview };
   }
 
-  function getPreview(id: string): TransactionPreview | undefined {
-    const result = getPreviewResult(id);
+  function getPreview(id: string, context: PreviewTenantContext): TransactionPreview | undefined {
+    const result = getPreviewResult(id, context);
     return result.ok ? result.preview : undefined;
   }
 
-  function cancelPreviewResult(id: string): PreviewResult {
+  function cancelPreviewResult(id: string, context: PreviewTenantContext): PreviewResult {
     const preview = store.get(id);
-    if (!preview) {
+    if (!preview || !isOwnedBy(preview, context)) {
       return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
     }
     if (isExpired(preview)) {
@@ -159,8 +173,8 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     return { ok: true, preview: cancelled };
   }
 
-  function cancelPreview(id: string): TransactionPreview | undefined {
-    const result = cancelPreviewResult(id);
+  function cancelPreview(id: string, context: PreviewTenantContext): TransactionPreview | undefined {
+    const result = cancelPreviewResult(id, context);
     return result.ok ? result.preview : undefined;
   }
 
@@ -188,7 +202,7 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
   async function confirmPreview(
     id: string,
     committer: TransactionCommitter,
-    context?: PreviewTenantContext
+    context: PreviewTenantContext
   ): Promise<ConfirmResult> {
     const preview = store.get(id);
 
@@ -209,9 +223,9 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     }
 
     if (
-      context &&
-      (context.businessId !== preview.businessId ||
-        context.createdByUserId !== preview.createdByUserId)
+      !context ||
+      context.businessId !== preview.businessId ||
+      context.createdByUserId !== preview.createdByUserId
     ) {
       return {
         ok: false,
