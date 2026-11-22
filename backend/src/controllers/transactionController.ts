@@ -1,10 +1,12 @@
 import type { Request, Response } from 'express';
 import { ensureDefaultUser } from '../services/ledger/customerService.js';
+import { getDashboardSummary } from '../services/dashboard/dashboardService.js';
 import {
   createTransaction,
   getCustomerBalanceForName,
-  getDashboardSummary,
   getTotalOutstandingForUser,
+  getTransactionById,
+  getTransactionHistory,
   getTransactionsForUser,
 } from '../services/ledger/transactionService.js';
 
@@ -88,13 +90,44 @@ export async function createTransactionHandler(req: Request, res: Response) {
   }
 }
 
-export async function listTransactionsHandler(_req: Request, res: Response) {
+export async function listTransactionsHandler(req: Request, res: Response) {
   try {
     const user = await ensureDefaultUser();
+    const requested = (req as Request & { historyQueryRequested?: boolean }).historyQueryRequested;
+
+    if (requested) {
+      const query = req.query as {
+        page?: number;
+        limit?: number;
+        type?: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
+        customerId?: string;
+        from?: Date;
+        to?: Date;
+      };
+      const result = await getTransactionHistory(user.id, query);
+      return res.json({ ok: true, data: result });
+    }
+
     const transactions = await getTransactionsForUser(user.id);
-    res.json({ ok: true, data: transactions });
+    return res.json({ ok: true, data: transactions });
   } catch (error) {
-    res.status(500).json({ ok: false, message: 'Unable to load transactions.' });
+    return res.status(500).json({ ok: false, message: 'Unable to load transactions.' });
+  }
+}
+
+export async function getTransactionByIdHandler(req: Request, res: Response) {
+  try {
+    const user = await ensureDefaultUser();
+    const transactionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+    const transaction = await getTransactionById(user.id, transactionId);
+
+    if (!transaction) {
+      return res.status(404).json({ ok: false, message: 'Transaction not found.' });
+    }
+
+    return res.json({ ok: true, data: transaction });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: 'Unable to load transaction.' });
   }
 }
 

@@ -7,46 +7,260 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
 enum TransactionType {
   CREDIT
   PAYMENT
   SALE
   EXPENSE
+  OPENING_BALANCE
+  SALE_RETURN
+  REFUND
+}
+
+enum TransactionStatus {
+  ACTIVE
+  VOIDED
+}
+
+enum SaleMode {
+  CASH
+  CREDIT
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  OTHER
+}
+
+enum OpeningBalanceDirection {
+  INCREASE
+  DECREASE
+}
+
+enum OtpPurpose {
+  LOGIN
+  SIGNUP
+  PHONE_VERIFY
+  PASSWORD_RESET
+}
+
+enum OtpChannel {
+  SMS
+  WHATSAPP
+}
+
+enum OtpStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  SUPERSEDED
+}
+
+enum VoiceRequestStatus {
+  PENDING
+  PARSED
+  APPLIED
+  REJECTED
+  FAILED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  VOID
+  DELETE
+  LOGIN
 }
 
 model User {
-  id          String      @id @default(cuid())
-  name        String
-  email       String?     @unique
-  businessName String
-  createdAt   DateTime    @default(now())
-  customers   Customer[]
-  transactions Transaction[]
+  id              String    @id @default(cuid())
+  name            String
+  email           String?   @unique
+  phone           String?   @unique
+  passwordHash    String?
+  phoneVerifiedAt DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+
+  memberships         Membership[]
+  otpChallenges       OtpChallenge[]
+  createdCustomers    Customer[]                @relation("CustomerCreatedBy")
+  createdTransactions Transaction[]             @relation("TransactionCreatedBy")
+  voidedTransactions  Transaction[]             @relation("TransactionVoidedBy")
+  voiceRequests       VoiceTransactionRequest[]
+  auditLogs           AuditLog[]
+}
+
+model OtpChallenge {
+  id         String     @id @default(cuid())
+  userId     String?
+  phone      String
+  purpose    OtpPurpose
+  channel    OtpChannel @default(SMS)
+  codeHash   String
+  status     OtpStatus  @default(ACTIVE)
+  expiresAt  DateTime   @db.Timestamptz(3)
+  consumedAt DateTime?  @db.Timestamptz(3)
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([phone, purpose, status])
+  @@index([status, expiresAt])
+}
+
+model Business {
+  id        String    @id @default(cuid())
+  name      String
+  currency  String    @default("INR")
+  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  memberships   Membership[]
+  customers     Customer[]
+  transactions  Transaction[]
+  voiceRequests VoiceTransactionRequest[]
+  auditLogs     AuditLog[]
+
+  @@index([name])
+  @@index([deletedAt])
+}
+
+model Membership {
+  id         String           @id @default(cuid())
+  userId     String
+  businessId String
+  role       Role
+  status     MembershipStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime         @updatedAt @db.Timestamptz(3)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@index([businessId, role, status])
 }
 
 model Customer {
-  id          String      @id @default(cuid())
-  userId      String
-  name        String
-  phone       String?
-  createdAt   DateTime    @default(now())
-  user        User        @relation(fields: [userId], references: [id])
+  id              String    @id @default(cuid())
+  businessId      String
+  name            String
+  phone           String?
+  email           String?
+  notes           String?
+  createdByUserId String
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy    User          @relation("CustomerCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   transactions Transaction[]
 
-  @@index([userId])
+  @@unique([businessId, id])
+  @@index([businessId, name])
+  @@index([businessId, createdByUserId])
 }
 
 model Transaction {
-  id          String          @id @default(cuid())
-  userId      String
-  customerId  String?
-  type        TransactionType
-  amount      Int
-  description String
-  createdAt   DateTime        @default(now())
-  user        User            @relation(fields: [userId], references: [id])
-  customer    Customer?       @relation(fields: [customerId], references: [id])
+  id                    String                   @id @default(cuid())
+  businessId            String
+  customerId            String?
+  type                  TransactionType
+  status                TransactionStatus        @default(ACTIVE)
+  amount                Decimal                  @db.Decimal(14, 2)
+  saleMode              SaleMode?
+  paymentMethod         PaymentMethod?
+  openingDirection      OpeningBalanceDirection?
+  description           String?
+  occurredAt            DateTime                 @default(now()) @db.Timestamptz(3)
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  createdByUserId       String
+  voidedAt              DateTime?                @db.Timestamptz(3)
+  voidedByUserId        String?
+  voidReason            String?
+  originalTransactionId String?
+  idempotencyKey        String?
 
-  @@index([userId, createdAt])
-  @@index([customerId])
+  business     Business                 @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  customer     Customer?                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdBy    User                     @relation("TransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  voidedBy     User?                    @relation("TransactionVoidedBy", fields: [voidedByUserId], references: [id], onDelete: Restrict)
+  original     Transaction?             @relation("TransactionLink", fields: [originalTransactionId], references: [id], onDelete: Restrict)
+  linkedFrom   Transaction[]            @relation("TransactionLink")
+  voiceRequest VoiceTransactionRequest?
+
+  @@unique([businessId, id])
+  @@index([businessId, occurredAt])
+  @@index([businessId, customerId, occurredAt])
+  @@index([businessId, type, status])
+  @@index([businessId, originalTransactionId])
+  @@index([businessId, createdByUserId])
+  @@index([businessId, voidedByUserId])
+}
+
+model VoiceTransactionRequest {
+  id                String             @id @default(cuid())
+  businessId        String
+  requestedByUserId String
+  transcript        String
+  parsedPayload     Json?
+  status            VoiceRequestStatus @default(PENDING)
+  errorMessage      String?
+  transactionId     String?            @unique
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  requestedBy User         @relation(fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, status, createdAt])
+  @@index([businessId, requestedByUserId])
+  @@index([businessId, transactionId])
+}
+
+model AuditLog {
+  id          String         @id @default(cuid())
+  businessId  String
+  actorType   AuditActorType @default(USER)
+  actorUserId String?
+  action      AuditAction
+  entityType  String
+  entityId    String
+  before      Json?
+  after       Json?
+  metadata    Json?
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  actor    User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([businessId, entityType, entityId])
+  @@index([businessId, actorUserId])
 }
