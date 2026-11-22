@@ -24,6 +24,7 @@ const spokenNumberMap: Record<string, number> = {
   char: 4,
   chaar: 4,
   paanch: 5,
+  panch: 5,
   pach: 5,
   che: 6,
   chhe: 6,
@@ -140,13 +141,9 @@ function parseSpokenNumber(value: string): number | null {
 
   for (const token of tokens) {
     const normalizedToken = token.replace(/[^a-z]/gi, '');
-    const numberValue = spokenNumberMap[normalizedToken] ?? numberWordFallback[normalizedToken];
 
-    if (typeof numberValue === 'number') {
-      current += numberValue;
-      continue;
-    }
-
+    // Multiplier words are checked before number values so that "hazar"
+    // multiplies the running total rather than being added as 1000
     if (normalizedToken === 'sau' || normalizedToken === 'hundred') {
       current *= 100;
       continue;
@@ -164,6 +161,13 @@ function parseSpokenNumber(value: string): number | null {
 
     if (normalizedToken === 'crore') {
       current *= 10000000;
+      continue;
+    }
+
+    const numberValue = spokenNumberMap[normalizedToken] ?? numberWordFallback[normalizedToken];
+
+    if (typeof numberValue === 'number') {
+      current += numberValue;
       continue;
     }
 
@@ -224,65 +228,79 @@ function extractAmount(text: string): number | null {
 }
 
 function extractCustomerName(text: string, intent: ParsedIntent['intent']): string | undefined {
+  // Read intents that do not require a customer name
+  if (intent === 'GET_TOTAL_OUTSTANDING' || intent === 'GET_TODAY_TRANSACTIONS') {
+    return undefined;
+  }
+
   const cleaned = text
-    .replace(/(?:ko|ne|se|ka|ki|par|mein|mein)\s+/gi, ' ')
-    .replace(/\b(?:udhaar|payment|sale|kharcha|maal|baki|kitna|hai|hoga|karun|karna|kar diya|de diye|diya|liye|liya|batao)\b/gi, ' ')
+    .toLowerCase()
+    // Remove postpositions (Hindi/English) - word-boundary anchored to avoid
+    // matching inside larger words (e.g. "ne" inside "lene")
+    .replace(/\b(?:ko|ke|ne|se|ka|ki|par|mein|for|to|from)\s+/gi, ' ')
+    // Remove transaction-related and action words
+    .replace(/\b(?:udhaar|udhar|payment|sale|kharcha|maal|baki|kitna|hai|hoga|karun|karna|kar diya|de diye|de diya|diya|diye|liye|liya|lene|hain|batao|dikhao|dikha|transactions|owes|owed|show|list|credit|expense|samaan|maal|rupees|rupaye|rs|add|record)\b/gi, ' ')
+    // Remove amounts (numeric)
+    .replace(/\b\d+(?:[.,]\d+)*\b/g, ' ')
+    // Remove currency words
+    .replace(/\b(?:rupees|rupaye|rs)\b/gi, ' ')
+    // Remove punctuation
+    .replace(/[.,!?;:]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const match = cleaned.match(/[A-Za-z][A-Za-z\s]{1,25}/);
-  if (match) {
-    const candidate = match[0].trim();
-    if (candidate && !/^(?:aaj|today|kitna|baki|hisaab|rupi|rupaye|rupees)$/i.test(candidate)) {
-      return candidate;
-    }
+  if (!cleaned) {
+    return undefined;
   }
 
-  const tokens = cleaned.split(/\s+/);
-  const firstToken = tokens[0];
-  if (firstToken && /[A-Za-z]/.test(firstToken)) {
-    return firstToken;
+  const tokens = cleaned.split(/\s+/).filter(Boolean).filter((t) => /[a-z]/i.test(t));
+  if (tokens.length === 0) {
+    return undefined;
   }
 
-  return undefined;
+  // Capitalize each token and join to support multi-word names
+  return tokens.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ');
 }
 
-function inferIntent(text: string): ParsedIntent['intent'] {
+function inferIntent(text: string): { intent: ParsedIntent['intent']; isFallback: boolean } {
   const lower = text.toLowerCase();
 
-  if (/(udhaar|udhar|credit|loan|dene|diya|de diy|de diye)/.test(lower)) {
-    return 'ADD_CREDIT';
-  }
-
-  if (/(payment|paid|de diye|de diya|payment kar|dena|de rahe|de diye)/.test(lower)) {
-    return 'RECORD_PAYMENT';
-  }
-
-  if (/(sale|sell|bech|bik|bikh|maal|sale hui|bik gay|ki sale)/.test(lower)) {
-    return 'ADD_SALE';
-  }
-
-  if (/(kharcha|expense|expense hua|kharch|cost|purchase|liya|market se|wholesale)/.test(lower)) {
-    return 'ADD_EXPENSE';
-  }
-
-  if (/(kitna.*udhaar|udhaar.*kitna|balance|baki|hisaab.*hai|kitne.*paise|ka.*hisaab|kitna.*hai)/.test(lower)) {
-    return 'GET_BALANCE';
-  }
-
+  // Read intents first (specific to general) to avoid being shadowed by write intents
   if (/(total.*outstanding|sab.*baki|mere customers.*paise|total kitne paise|total outstanding)/.test(lower)) {
-    return 'GET_TOTAL_OUTSTANDING';
-  }
-
-  if (/(aaj.*transaction|aaj.*transactions|today.*transaction|today.*transactions|transactions dikhao|aaj ke transactions)/.test(lower)) {
-    return 'GET_TODAY_TRANSACTIONS';
+    return { intent: 'GET_TOTAL_OUTSTANDING', isFallback: false };
   }
 
   if (/(customer.*transactions|transactions.*customer|raju.*transactions|hisab.*dikhao)/.test(lower)) {
-    return 'GET_CUSTOMER_TRANSACTIONS';
+    return { intent: 'GET_CUSTOMER_TRANSACTIONS', isFallback: false };
   }
 
-  return 'ADD_CREDIT';
+  if (/(aaj.*transaction|aaj.*transactions|today.*transaction|today.*transactions|transactions dikhao|aaj ke transactions)/.test(lower)) {
+    return { intent: 'GET_TODAY_TRANSACTIONS', isFallback: false };
+  }
+
+  if (/(kitna.*udhaar|udhaar.*kitna|balance|baki|hisaab.*hai|kitne.*paise|ka.*hisaab|kitna.*hai)/.test(lower)) {
+    return { intent: 'GET_BALANCE', isFallback: false };
+  }
+
+  // Write intents - payment checked before credit to resolve overlap on "de diye"/"de diya"/"diye"
+  if (/(payment|paid|de diye|de diya|diye|payment kar|dena|de rahe)/.test(lower)) {
+    return { intent: 'RECORD_PAYMENT', isFallback: false };
+  }
+
+  if (/(udhaar|udhar|credit|loan|dene|lene|diya|owes)/.test(lower)) {
+    return { intent: 'ADD_CREDIT', isFallback: false };
+  }
+
+  if (/(sale|sell|bech|bik|bikh|maal|sale hui|bik gay|ki sale)/.test(lower)) {
+    return { intent: 'ADD_SALE', isFallback: false };
+  }
+
+  if (/(kharcha|expense|expense hua|kharch|cost|purchase|liya|market se|wholesale)/.test(lower)) {
+    return { intent: 'ADD_EXPENSE', isFallback: false };
+  }
+
+  // Safe fallback: read-only intent, no financial write is invented for unknown input
+  return { intent: 'GET_BALANCE', isFallback: true };
 }
 
 function inferDescription(text: string): string {
@@ -291,6 +309,8 @@ function inferDescription(text: string): string {
     .replace(/^(?:raju|amit|neha|suresh)\s+/i, '')
     .replace(/\b(?:ko|ne|se|ka|ki|me|mein|hisaab|batao|kitna|udhaar|payment|sale|kharcha|samaan|maal|rupaye|rupees|rs)\b/gi, ' ')
     .replace(/\b(?:diya|de|di|liye|liya|kar|hue|hui|hai|hoga|suna|kya)\b/gi, ' ')
+    .replace(/\b\d+(?:[.,]\d+)*\b/g, ' ')
+    .replace(/[.,!?;:]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -302,27 +322,57 @@ export async function interpretTranscript(rawTranscript: string): Promise<Parsed
 
   if (!text) {
     return {
-      intent: 'ADD_CREDIT',
+      intent: 'GET_BALANCE',
       confidence: 0,
-      missingFields: ['transcript'],
+      missingFields: ['transcript', 'customerName'],
     };
   }
 
-  const intent = inferIntent(text);
-  const customerName = extractCustomerName(text, intent);
+  const { intent, isFallback } = inferIntent(text);
+  const customerName = isFallback ? undefined : extractCustomerName(text, intent);
   const amount = extractAmount(text);
   const description = inferDescription(text);
+
+  // Fields required per intent type
+  const readIntentsNotNeedingCustomer = ['GET_TOTAL_OUTSTANDING', 'GET_TODAY_TRANSACTIONS'];
+  const readIntentsNeedingCustomer = ['GET_BALANCE', 'GET_CUSTOMER_TRANSACTIONS'];
+  const writeIntents = ['ADD_CREDIT', 'RECORD_PAYMENT', 'ADD_SALE', 'ADD_EXPENSE'];
+
+  const customerNameRequired =
+    readIntentsNeedingCustomer.includes(intent) || writeIntents.includes(intent);
+  const amountRequired = writeIntents.includes(intent);
+
   const missingFields = [
-    !customerName ? 'customerName' : null,
-    intent !== 'GET_BALANCE' && intent !== 'GET_TOTAL_OUTSTANDING' && intent !== 'GET_TODAY_TRANSACTIONS' && intent !== 'GET_CUSTOMER_TRANSACTIONS' && !amount ? 'amount' : null,
+    customerNameRequired && !customerName ? 'customerName' : null,
+    amountRequired && !amount ? 'amount' : null,
   ].filter(Boolean) as string[];
+
+  // Confidence scoring: reflects whether fields needed for the intent were identified
+  let confidence: number;
+  if (isFallback) {
+    confidence = 0;
+  } else if (readIntentsNotNeedingCustomer.includes(intent)) {
+    // No fields required for these read intents
+    confidence = 0.9;
+  } else if (readIntentsNeedingCustomer.includes(intent)) {
+    confidence = customerName ? 0.9 : 0.5;
+  } else {
+    // Write intents: need both customerName and amount for high confidence
+    if (customerName && amount) {
+      confidence = 0.9;
+    } else if (customerName || amount) {
+      confidence = 0.5;
+    } else {
+      confidence = 0.3;
+    }
+  }
 
   return {
     intent,
     customerName,
     amount: amount ?? undefined,
     description,
-    confidence: amount || customerName ? 0.9 : 0.5,
+    confidence,
     missingFields,
   };
 }

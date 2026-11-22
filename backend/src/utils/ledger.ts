@@ -2,11 +2,11 @@ import type { Transaction } from '@prisma/client';
 
 export function calculateOutstandingAmount(transactions: Pick<Transaction, 'type' | 'amount'>[]) {
   return transactions.reduce((total, transaction) => {
-    if (transaction.type === 'CREDIT' || transaction.type === 'SALE') {
+    if (transaction.type === 'CREDIT') {
       return total + transaction.amount;
     }
 
-    if (transaction.type === 'PAYMENT' || transaction.type === 'EXPENSE') {
+    if (transaction.type === 'PAYMENT') {
       return total - transaction.amount;
     }
 
