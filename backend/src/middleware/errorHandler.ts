@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger.js';
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -12,6 +13,7 @@ export function errorHandler(
   _next: NextFunction
 ) {
   const statusCode = err.statusCode || err.status || 500;
+  logger.error('server.error', { statusCode, errorName: err.name || 'Error' });
   const isProduction = process.env.NODE_ENV === 'production';
   const hasExplicitStatus =
     typeof err.statusCode === 'number' || typeof err.status === 'number';

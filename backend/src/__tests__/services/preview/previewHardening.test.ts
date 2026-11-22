@@ -91,7 +91,7 @@ describe('preview service - concurrency hardening', () => {
       assert.strictEqual(result.retryable, true);
     }
     assert.strictEqual(commitCalls, 1);
-    const current = service.getPreview(preview.id);
+    const current = service.getPreview(preview.id, CONTEXT);
     assert.ok(current);
     assert.strictEqual(current.state, 'pending');
   });
@@ -111,7 +111,7 @@ describe('preview service - concurrency hardening', () => {
     const retry = await service.confirmPreview(preview.id, flakyCommitter, CONTEXT);
     assert.strictEqual(retry.ok, true);
     assert.strictEqual(commitCalls, 2);
-    const confirmed = service.getPreviewResult(preview.id);
+    const confirmed = service.getPreviewResult(preview.id, CONTEXT);
     assert.strictEqual(confirmed.ok, true);
     if (confirmed.ok) assert.strictEqual(confirmed.preview.state, 'confirmed');
   });
@@ -121,7 +121,7 @@ describe('preview service - concurrency hardening', () => {
     const preview = service.createPreview(makeParsed(), CONTEXT);
     const committer: TransactionCommitter = async () => { throw new Error('failure'); };
     await service.confirmPreview(preview.id, committer, CONTEXT);
-    const current = service.getPreview(preview.id);
+    const current = service.getPreview(preview.id, CONTEXT);
     assert.ok(current);
     assert.notStrictEqual(current.state, 'confirmed');
   });
@@ -175,7 +175,7 @@ describe('preview service - expiry', () => {
     const service = makeService(nowRef);
     const preview = service.createPreview(makeParsed(), CONTEXT);
     nowRef.value = START + TTL;
-    const result = service.getPreviewResult(preview.id);
+    const result = service.getPreviewResult(preview.id, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'EXPIRED');
   });
@@ -199,10 +199,10 @@ describe('preview service - expiry', () => {
     const service = makeService(nowRef);
     const preview = service.createPreview(makeParsed(), CONTEXT);
     nowRef.value = START + TTL + 1;
-    const result = service.cancelPreviewResult(preview.id);
+    const result = service.cancelPreviewResult(preview.id, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'EXPIRED');
-    const second = service.cancelPreviewResult(preview.id);
+    const second = service.cancelPreviewResult(preview.id, CONTEXT);
     assert.strictEqual(second.ok, false);
     if (!second.ok) assert.strictEqual(second.code, 'EXPIRED');
   });
@@ -212,10 +212,10 @@ describe('preview service - expiry', () => {
     const service = makeService(nowRef);
     const preview = service.createPreview(makeParsed(), CONTEXT);
     nowRef.value = START + TTL + 1;
-    const result = service.getPreviewResult(preview.id);
+    const result = service.getPreviewResult(preview.id, CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.message, 'Preview has expired.');
-    assert.strictEqual(service.getPreview(preview.id), undefined);
+    assert.strictEqual(service.getPreview(preview.id, CONTEXT), undefined);
   });
 
   it('buildPreview uses the injected clock for createdAt', () => {

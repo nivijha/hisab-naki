@@ -63,6 +63,7 @@ type MockConfig = {
 
 function makeMockPrisma(config: MockConfig = {}) {
   const calls = {
+    locks: [] as unknown[],
     create: [] as Prisma.TransactionCreateArgs[],
     transactionFindFirst: [] as Prisma.TransactionFindFirstArgs[],
     transactionFindMany: [] as Prisma.TransactionFindManyArgs[],
@@ -72,6 +73,11 @@ function makeMockPrisma(config: MockConfig = {}) {
 
   // Test double: only the delegates used by PrismaTransactionRepository are implemented.
   const client = {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(client),
+    $executeRaw: async (...args: unknown[]) => {
+      calls.locks.push(args);
+      return 1;
+    },
     transaction: {
       create: async (args: Prisma.TransactionCreateArgs): Promise<Transaction> => {
         calls.create.push(args);
@@ -268,5 +274,79 @@ describe('PrismaTransactionRepository - multi-tenant schema', () => {
 
     assert.strictEqual(result.transactions.length, 1);
     assert.strictEqual(result.total, 42);
+  });
+});
+
+describe('PrismaTransactionRepository - idempotency', () => {
+  const input = {
+    businessId: BUSINESS_ID,
+    createdByUserId: CREATOR_ID,
+    customerId: CUSTOMER_ID,
+    type: 'CREDIT' as const,
+    amount: 450,
+    description: 'udhaar',
+    idempotencyKey: 'key-1',
+  };
+
+  it('takes an advisory lock and persists the idempotency key', async () => {
+    const { client, calls } = makeMockPrisma();
+    const repo = new PrismaTransactionRepository(client);
+
+    await repo.createIdempotent(input);
+
+    assert.strictEqual(calls.locks.length, 1);
+    const data = calls.create[0].data as Record<string, unknown>;
+    assert.strictEqual(data.idempotencyKey, 'key-1');
+    assert.strictEqual(data.businessId, BUSINESS_ID);
+  });
+
+  it('returns the existing transaction without creating when the key already exists', async () => {
+    const existing = { ...makeTransaction(), customer: makeCustomer() };
+    const { client, calls } = makeMockPrisma({ findFirstResult: existing });
+    const repo = new PrismaTransactionRepository(client);
+
+    const result = await repo.createIdempotent(input);
+
+    assert.strictEqual(result.transaction.id, existing.id);
+    assert.strictEqual(result.created, false);
+    assert.strictEqual(calls.create.length, 0);
+  });
+
+  it('handles a unique-constraint race by returning the winning transaction', async () => {
+    const winner = { ...makeTransaction(), customer: makeCustomer() };
+    const { client } = makeMockPrisma();
+    const mutable = client as unknown as {
+      transaction: {
+        create: (args: Prisma.TransactionCreateArgs) => Promise<Transaction>;
+        findFirst: (args: Prisma.TransactionFindFirstArgs) => Promise<TransactionWithCustomer | null>;
+      };
+    };
+    let findCount = 0;
+    mutable.transaction.findFirst = async () => {
+      findCount += 1;
+      return findCount === 1 ? null : winner;
+    };
+    mutable.transaction.create = async () => {
+      throw new Prisma.PrismaClientKnownRequestError('duplicate', {
+        code: 'P2002',
+        clientVersion: '5.22.0',
+      });
+    };
+    const repo = new PrismaTransactionRepository(client);
+
+    const result = await repo.createIdempotent(input);
+    assert.strictEqual(result.transaction.id, winner.id);
+    assert.strictEqual(result.created, false);
+    assert.strictEqual(findCount, 2);
+  });
+
+  it('finds by idempotency key scoped to business', async () => {
+    const { client, calls } = makeMockPrisma();
+    const repo = new PrismaTransactionRepository(client);
+    await repo.findByIdempotencyKey(BUSINESS_ID, 'key-1');
+    assert.deepStrictEqual(calls.transactionFindFirst[0].where, {
+      businessId: BUSINESS_ID,
+      idempotencyKey: 'key-1',
+    });
   });
 });

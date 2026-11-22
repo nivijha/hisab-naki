@@ -15,6 +15,20 @@ export function Navbar() {
   const [activeHref, setActiveHref] = useState('');
   const menuTrigger = useRef<HTMLButtonElement>(null);
 
+  const handleNavigationKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (!open || event.key !== 'Tab' || !menuTrigger.current?.getClientRects().length) return;
+
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('#mobile-navigation a'));
+    const lastLink = links.at(-1);
+    if (event.shiftKey && event.target === menuTrigger.current) {
+      event.preventDefault();
+      lastLink?.focus();
+    } else if (!event.shiftKey && event.target === lastLink) {
+      event.preventDefault();
+      menuTrigger.current.focus();
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
 
@@ -60,7 +74,7 @@ export function Navbar() {
   }, []);
 
   return (
-    <nav aria-label="Main navigation" className="fixed inset-x-0 top-0 z-50 border-b border-beige/15 bg-forest">
+    <nav aria-label="Main navigation" onKeyDown={handleNavigationKeyDown} className="fixed inset-x-0 top-0 z-50 border-b border-beige/15 bg-forest">
       <div className="site-container">
         <div className="flex h-[72px] items-center justify-between">
           <Link href="/" className="flex min-h-11 items-center gap-3 text-beige lg:min-h-0" aria-label="HisabNaki home">

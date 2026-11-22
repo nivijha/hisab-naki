@@ -9,6 +9,14 @@ const readIntents = [
 
 type ReadIntent = (typeof readIntents)[number];
 
+function hasAtMostTwoDecimals(value: number): boolean {
+  if (!Number.isFinite(value)) return false;
+  const text = String(value);
+  if (text.includes('e') || text.includes('E')) return false;
+  const dot = text.indexOf('.');
+  return dot === -1 ? true : text.length - dot - 1 <= 2;
+}
+
 export const transactionIdParamSchema = z.object({
   id: z.string().min(1, 'Transaction ID is required.'),
 });
@@ -41,15 +49,24 @@ export const createTransactionSchema = z
         'GET_CUSTOMER_TRANSACTIONS',
       ])
       .optional(),
-    customerName: z.string().min(1).optional(),
+    customerName: z.string().trim().min(1).optional(),
     amount: z
       .preprocess(
         (val) => (typeof val === 'string' ? Number(val) : val),
-        z.number().positive('Amount must be greater than zero.')
+        z
+          .number()
+          .positive('Amount must be greater than zero.')
+          .refine(hasAtMostTwoDecimals, 'Amount supports at most two decimal places.')
       )
       .optional(),
     description: z.string().optional(),
     type: z.enum(['CREDIT', 'PAYMENT', 'SALE', 'EXPENSE']).optional(),
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(1, 'Idempotency key cannot be empty.')
+      .max(200, 'Idempotency key is too long.')
+      .optional(),
   })
   .superRefine((data, ctx) => {
     const isReadIntent = data.intent ? readIntents.includes(data.intent as ReadIntent) : false;
