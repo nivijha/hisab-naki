@@ -10,10 +10,11 @@ import prisma from '../lib/prisma.js';
 export type TransactionWithCustomer = Transaction & { customer: Customer | null };
 
 export type CreateTransactionRecordInput = {
-  userId: string;
+  businessId: string;
+  createdByUserId: string;
   customerId: string;
   type: TransactionType;
-  amount: number;
+  amount: Prisma.Decimal | number;
   description: string;
 };
 
@@ -22,7 +23,7 @@ export type CustomerTransactionGroup = {
 };
 
 export type TransactionHistoryQuery = {
-  userId: string;
+  businessId: string;
   page: number;
   limit: number;
   type?: TransactionType;
@@ -38,10 +39,10 @@ export type TransactionHistoryPage = {
 
 export interface TransactionRepository {
   create(input: CreateTransactionRecordInput): Promise<TransactionWithCustomer>;
-  findById(transactionId: string, userId: string): Promise<TransactionWithCustomer | null>;
-  listForUser(userId: string): Promise<TransactionWithCustomer[]>;
-  listForCustomer(customerId: string, userId: string): Promise<Transaction[]>;
-  listCustomerTransactionGroups(userId: string): Promise<CustomerTransactionGroup[]>;
+  findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null>;
+  listForBusiness(businessId: string): Promise<TransactionWithCustomer[]>;
+  listForCustomer(customerId: string, businessId: string): Promise<Transaction[]>;
+  listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]>;
   findHistory(query: TransactionHistoryQuery): Promise<TransactionHistoryPage>;
 }
 
@@ -51,7 +52,8 @@ export class PrismaTransactionRepository implements TransactionRepository {
   create(input: CreateTransactionRecordInput): Promise<TransactionWithCustomer> {
     return this.client.transaction.create({
       data: {
-        userId: input.userId,
+        businessId: input.businessId,
+        createdByUserId: input.createdByUserId,
         customerId: input.customerId,
         type: input.type,
         amount: input.amount,
@@ -63,36 +65,41 @@ export class PrismaTransactionRepository implements TransactionRepository {
     });
   }
 
-  findById(transactionId: string, userId: string): Promise<TransactionWithCustomer | null> {
+  findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null> {
     return this.client.transaction.findFirst({
-      where: { id: transactionId, userId },
+      where: { id: transactionId, businessId },
       include: { customer: true },
     });
   }
 
-  listForUser(userId: string): Promise<TransactionWithCustomer[]> {
+  listForBusiness(businessId: string): Promise<TransactionWithCustomer[]> {
     return this.client.transaction.findMany({
-      where: { userId },
+      where: { businessId, status: 'ACTIVE' },
       include: { customer: true },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  listForCustomer(customerId: string, userId: string): Promise<Transaction[]> {
+  listForCustomer(customerId: string, businessId: string): Promise<Transaction[]> {
     return this.client.transaction.findMany({
-      where: { customerId, userId },
+      where: { customerId, businessId, status: 'ACTIVE' },
     });
   }
 
-  async listCustomerTransactionGroups(userId: string): Promise<CustomerTransactionGroup[]> {
+  async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
     return this.client.customer.findMany({
-      where: { userId },
-      include: { transactions: true },
+      where: { businessId },
+      include: {
+        transactions: { where: { status: 'ACTIVE' } },
+      },
     });
   }
 
   async findHistory(query: TransactionHistoryQuery): Promise<TransactionHistoryPage> {
-    const where: Prisma.TransactionWhereInput = { userId: query.userId };
+    const where: Prisma.TransactionWhereInput = {
+      businessId: query.businessId,
+      status: 'ACTIVE',
+    };
 
     if (query.type) {
       where.type = query.type;

@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import { fileURLToPath } from 'node:url';
 import aiRoutes from './routes/ai.js';
+import authRoutes from './routes/auth.js';
 import previewRoutes from './routes/preview.js';
 import customerRoutes from './routes/customers.js';
 import transactionRoutes from './routes/transactions.js';
@@ -27,6 +28,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/ai', aiRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/preview', previewRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/transactions', transactionRoutes);

@@ -1,10 +1,9 @@
-import prisma from '../../lib/prisma.js';
 import {
   PrismaCustomerRepository,
   type CustomerRepository,
   type UpdateCustomerData,
 } from '../../repositories/customerRepository.js';
-import { calculateOutstandingAmount } from '../../utils/ledger.js';
+import { calculateOutstandingAmount, toDisplayNumber } from '../../utils/ledger.js';
 
 export type UpdateCustomerInput = {
   name?: string;
@@ -19,48 +18,35 @@ export type DeleteCustomerResult =
   | { ok: true }
   | { ok: false; code: 'NOT_FOUND' | 'HAS_TRANSACTIONS'; message: string };
 
-export async function ensureDefaultUser() {
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: 'asc' },
-    take: 1,
-  });
-
-  if (users.length > 0) {
-    return users[0];
-  }
-
-  return prisma.user.create({
-    data: {
-      name: 'Demo Shopkeeper',
-      email: 'shopkeeper@hisabnaki.local',
-      businessName: 'Raju General Store',
-    },
-  });
-}
-
 export function createCustomerService(repository: CustomerRepository) {
-  async function ensureCustomer(userId: string, customerName: string, phone?: string) {
+  async function ensureCustomer(
+    businessId: string,
+    createdByUserId: string,
+    customerName: string,
+    phone?: string
+  ) {
     const normalizedName = customerName.trim();
 
     if (!normalizedName) {
       throw new Error('Customer name is required.');
     }
 
-    const existing = await repository.findByNameForDuplicateCheck(userId, normalizedName);
+    const existing = await repository.findByNameForDuplicateCheck(businessId, normalizedName);
 
     if (existing) {
       return existing;
     }
 
     return repository.create({
-      userId,
+      businessId,
+      createdByUserId,
       name: normalizedName,
       phone: phone ?? null,
     });
   }
 
   async function updateCustomer(
-    userId: string,
+    businessId: string,
     customerId: string,
     updates: UpdateCustomerInput
   ): Promise<UpdateCustomerResult> {
@@ -78,13 +64,13 @@ export function createCustomerService(repository: CustomerRepository) {
 
     const trimmedPhone = updates.phone !== undefined ? updates.phone.trim() : undefined;
 
-    const current = await repository.findById(userId, customerId);
+    const current = await repository.findById(businessId, customerId);
     if (!current) {
       return { ok: false, code: 'NOT_FOUND', message: 'Customer not found.' };
     }
 
     if (trimmedName !== undefined) {
-      const duplicate = await repository.findByNameForDuplicateCheck(userId, trimmedName);
+      const duplicate = await repository.findByNameForDuplicateCheck(businessId, trimmedName);
       if (duplicate && duplicate.id !== customerId) {
         return {
           ok: false,
@@ -102,7 +88,7 @@ export function createCustomerService(repository: CustomerRepository) {
       data.phone = trimmedPhone || null;
     }
 
-    const customer = await repository.update(userId, customerId, data);
+    const customer = await repository.update(businessId, customerId, data);
     if (!customer) {
       return { ok: false, code: 'NOT_FOUND', message: 'Customer not found.' };
     }
@@ -111,10 +97,10 @@ export function createCustomerService(repository: CustomerRepository) {
   }
 
   async function deleteCustomer(
-    userId: string,
+    businessId: string,
     customerId: string
   ): Promise<DeleteCustomerResult> {
-    const outcome = await repository.delete(userId, customerId);
+    const outcome = await repository.delete(businessId, customerId);
 
     if (outcome.status === 'DELETED') {
       return { ok: true };
@@ -131,21 +117,21 @@ export function createCustomerService(repository: CustomerRepository) {
     return { ok: false, code: 'NOT_FOUND', message: 'Customer not found.' };
   }
 
-  async function getCustomersForUser(userId: string) {
-    const customers = await repository.listForUser(userId);
+  async function getCustomersForBusiness(businessId: string) {
+    const customers = await repository.listForBusiness(businessId);
 
     return customers.map((customer) => ({
       id: customer.id,
       name: customer.name,
       phone: customer.phone,
       createdAt: customer.createdAt,
-      outstandingBalance: calculateOutstandingAmount(customer.transactions),
+      outstandingBalance: toDisplayNumber(calculateOutstandingAmount(customer.transactions)),
       transactionCount: customer.transactions.length,
     }));
   }
 
-  async function getCustomerById(userId: string, customerId: string) {
-    const customer = await repository.findById(userId, customerId);
+  async function getCustomerById(businessId: string, customerId: string) {
+    const customer = await repository.findById(businessId, customerId);
 
     if (!customer) {
       return null;
@@ -153,12 +139,12 @@ export function createCustomerService(repository: CustomerRepository) {
 
     return {
       ...customer,
-      outstandingBalance: calculateOutstandingAmount(customer.transactions),
+      outstandingBalance: toDisplayNumber(calculateOutstandingAmount(customer.transactions)),
     };
   }
 
-  async function getCustomerByName(userId: string, customerName: string) {
-    const customer = await repository.findByName(userId, customerName);
+  async function getCustomerByName(businessId: string, customerName: string) {
+    const customer = await repository.findByName(businessId, customerName);
 
     if (!customer) {
       return null;
@@ -166,12 +152,12 @@ export function createCustomerService(repository: CustomerRepository) {
 
     return {
       ...customer,
-      outstandingBalance: calculateOutstandingAmount(customer.transactions),
+      outstandingBalance: toDisplayNumber(calculateOutstandingAmount(customer.transactions)),
     };
   }
 
-  async function getCustomerTransactions(userId: string, customerId: string) {
-    const customer = await repository.findById(userId, customerId);
+  async function getCustomerTransactions(businessId: string, customerId: string) {
+    const customer = await repository.findById(businessId, customerId);
 
     if (!customer) {
       return null;
@@ -179,7 +165,7 @@ export function createCustomerService(repository: CustomerRepository) {
 
     return {
       ...customer,
-      outstandingBalance: calculateOutstandingAmount(customer.transactions),
+      outstandingBalance: toDisplayNumber(calculateOutstandingAmount(customer.transactions)),
     };
   }
 
@@ -187,7 +173,7 @@ export function createCustomerService(repository: CustomerRepository) {
     ensureCustomer,
     updateCustomer,
     deleteCustomer,
-    getCustomersForUser,
+    getCustomersForBusiness,
     getCustomerById,
     getCustomerByName,
     getCustomerTransactions,
@@ -196,34 +182,39 @@ export function createCustomerService(repository: CustomerRepository) {
 
 const defaultService = createCustomerService(new PrismaCustomerRepository());
 
-export async function ensureCustomer(userId: string, customerName: string, phone?: string) {
-  return defaultService.ensureCustomer(userId, customerName, phone);
+export async function ensureCustomer(
+  businessId: string,
+  createdByUserId: string,
+  customerName: string,
+  phone?: string
+) {
+  return defaultService.ensureCustomer(businessId, createdByUserId, customerName, phone);
 }
 
 export async function updateCustomer(
-  userId: string,
+  businessId: string,
   customerId: string,
   updates: UpdateCustomerInput
 ) {
-  return defaultService.updateCustomer(userId, customerId, updates);
+  return defaultService.updateCustomer(businessId, customerId, updates);
 }
 
-export async function deleteCustomer(userId: string, customerId: string) {
-  return defaultService.deleteCustomer(userId, customerId);
+export async function deleteCustomer(businessId: string, customerId: string) {
+  return defaultService.deleteCustomer(businessId, customerId);
 }
 
-export async function getCustomersForUser(userId: string) {
-  return defaultService.getCustomersForUser(userId);
+export async function getCustomersForBusiness(businessId: string) {
+  return defaultService.getCustomersForBusiness(businessId);
 }
 
-export async function getCustomerById(userId: string, customerId: string) {
-  return defaultService.getCustomerById(userId, customerId);
+export async function getCustomerById(businessId: string, customerId: string) {
+  return defaultService.getCustomerById(businessId, customerId);
 }
 
-export async function getCustomerByName(userId: string, customerName: string) {
-  return defaultService.getCustomerByName(userId, customerName);
+export async function getCustomerByName(businessId: string, customerName: string) {
+  return defaultService.getCustomerByName(businessId, customerName);
 }
 
-export async function getCustomerTransactions(userId: string, customerId: string) {
-  return defaultService.getCustomerTransactions(userId, customerId);
+export async function getCustomerTransactions(businessId: string, customerId: string) {
+  return defaultService.getCustomerTransactions(businessId, customerId);
 }

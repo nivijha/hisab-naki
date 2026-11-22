@@ -9,51 +9,80 @@ import type {
   TransactionHistoryPage,
   CreateTransactionRecordInput,
 } from '../../../repositories/transactionRepository.js';
-import type { TransactionType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Transaction, TransactionType } from '@prisma/client';
 
-const USER_ID = 'user-1';
+const BUSINESS_ID = 'biz-1';
+const OTHER_BUSINESS_ID = 'biz-2';
+const CREATOR_ID = 'user-1';
+const CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
 const NOW = new Date('2026-06-15T12:00:00.000Z');
 
 function makeTransaction(
   id: string,
   type: TransactionType,
-  amount: number,
-  createdAt: Date
+  amount: number | string,
+  createdAt: Date,
+  overrides: Partial<Transaction> = {}
 ): TransactionWithCustomer {
   return {
     id,
-    userId: USER_ID,
+    businessId: BUSINESS_ID,
     customerId: 'c-1',
     type,
-    amount,
+    status: 'ACTIVE',
+    amount: new Prisma.Decimal(amount),
+    saleMode: null,
+    paymentMethod: null,
+    openingDirection: null,
     description: 'test',
+    occurredAt: createdAt,
     createdAt,
+    updatedAt: createdAt,
+    createdByUserId: CREATOR_ID,
+    voidedAt: null,
+    voidedByUserId: null,
+    voidReason: null,
+    originalTransactionId: null,
+    idempotencyKey: null,
     customer: null,
+    ...overrides,
   };
 }
 
+type ScopedGroup = { businessId: string; transactions: Transaction[] };
+
 class InMemoryDashboardRepository implements TransactionRepository {
   readonly transactions: TransactionWithCustomer[] = [];
-  readonly groups: CustomerTransactionGroup[] = [];
+  readonly groups: ScopedGroup[] = [];
+  readonly businessReads: string[] = [];
 
   async create(_input: CreateTransactionRecordInput): Promise<TransactionWithCustomer> {
     throw new Error('not used');
   }
 
-  async findById(_transactionId: string, _userId: string): Promise<TransactionWithCustomer | null> {
+  async findById(_transactionId: string, _businessId: string): Promise<TransactionWithCustomer | null> {
     throw new Error('not used');
   }
 
-  async listForUser(userId: string): Promise<TransactionWithCustomer[]> {
-    return this.transactions.filter((t) => t.userId === userId);
+  async listForBusiness(businessId: string): Promise<TransactionWithCustomer[]> {
+    this.businessReads.push(businessId);
+    return this.transactions.filter(
+      (t) => t.businessId === businessId && t.status === 'ACTIVE'
+    );
   }
 
-  async listForCustomer(_customerId: string, _userId: string) {
+  async listForCustomer(_customerId: string, _businessId: string) {
     return [];
   }
 
-  async listCustomerTransactionGroups(_userId: string): Promise<CustomerTransactionGroup[]> {
-    return this.groups;
+  async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
+    this.businessReads.push(businessId);
+    return this.groups
+      .filter((g) => g.businessId === businessId)
+      .map((g) => ({
+        transactions: g.transactions.filter((transaction) => transaction.status === 'ACTIVE'),
+      }));
   }
 
   async findHistory(_query: TransactionHistoryQuery): Promise<TransactionHistoryPage> {
@@ -81,13 +110,14 @@ describe('dashboard service', () => {
     );
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 350);
   });
 
   it('2. outstanding balance calculation', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [
         makeTransaction('t1', 'CREDIT', 500, NOW),
         makeTransaction('t2', 'PAYMENT', 200, NOW),
@@ -97,7 +127,7 @@ describe('dashboard service', () => {
     });
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.totalOutstanding, 300, 'CREDIT 500 - PAYMENT 200; SALE/EXPENSE ignored');
   });
 
@@ -111,7 +141,7 @@ describe('dashboard service', () => {
     // repository returns desc order in production; mock pushes newest-first
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.recentTransactions.length, 5);
     assert.strictEqual(summary.recentTransactions[0].id, 't0');
     assert.strictEqual(summary.recentTransactions[4].id, 't4');
@@ -120,20 +150,22 @@ describe('dashboard service', () => {
   it('4. customer groups are read internally for outstanding (count not exposed)', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [makeTransaction('t1', 'CREDIT', 100, NOW)],
     });
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [makeTransaction('t2', 'PAYMENT', 40, NOW)],
     });
     let groupsRead = 0;
     const original = repo.listCustomerTransactionGroups.bind(repo);
-    repo.listCustomerTransactionGroups = async (userId: string) => {
+    repo.listCustomerTransactionGroups = async (businessId: string) => {
       groupsRead += 1;
-      return original(userId);
+      return original(businessId);
     };
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(groupsRead, 1, 'customer groups are read internally');
     assert.strictEqual(summary.totalOutstanding, 60, 'both customer groups contribute');
     assert.ok(!('customerCount' in summary), 'customerCount is not part of the API response');
@@ -143,7 +175,7 @@ describe('dashboard service', () => {
     const repo = new InMemoryDashboardRepository();
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 0);
     assert.strictEqual(summary.todaysExpenses, 0);
     assert.strictEqual(summary.paymentsReceived, 0);
@@ -159,7 +191,7 @@ describe('dashboard service', () => {
       getBusinessName: async () => 'Shopkeeper Business Name',
     });
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.businessName, 'Shopkeeper Business Name');
   });
 
@@ -170,7 +202,7 @@ describe('dashboard service', () => {
       fallbackBusinessName: 'Configured Fallback',
     });
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.businessName, 'Configured Fallback');
   });
 
@@ -181,7 +213,7 @@ describe('dashboard service', () => {
       fallbackBusinessName: 'Fallback Shop',
     });
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.businessName, 'Fallback Shop');
   });
 
@@ -189,23 +221,23 @@ describe('dashboard service', () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
+      listForBusiness: async () => { throw new Error('DB down'); },
       listForCustomer: async () => { throw new Error('DB down'); },
       listCustomerTransactionGroups: async () => { throw new Error('DB down'); },
       findHistory: async () => { throw new Error('DB down'); },
     };
     const service = createDashboardService({ repository: failingRepo, now: () => NOW });
 
-    await assert.rejects(() => service.getDashboardSummary(USER_ID), /DB down/);
+    await assert.rejects(() => service.getDashboardSummary(BUSINESS_ID), /DB down/);
   });
 
   it('9. existing response shape compatibility', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'PAYMENT', 50, NOW));
-    repo.groups.push({ transactions: [] });
+    repo.groups.push({ businessId: BUSINESS_ID, transactions: [] });
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     const expectedKeys = [
       'businessName',
       'todaysSales',
@@ -236,7 +268,7 @@ describe('dashboard service', () => {
     repo.transactions.push(makeTransaction('t4', 'CREDIT', 40, NOW));
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 10);
     assert.strictEqual(summary.todaysExpenses, 20);
     assert.strictEqual(summary.paymentsReceived, 30);
@@ -255,7 +287,7 @@ describe('dashboard service - date boundaries', () => {
     );
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 100, 'midnight is included (>= startOfToday)');
   });
 
@@ -266,7 +298,7 @@ describe('dashboard service - date boundaries', () => {
     );
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 0, 'just-before-midnight is excluded');
   });
 
@@ -279,7 +311,7 @@ describe('dashboard service - date boundaries', () => {
     repo.transactions.push(makeTransaction('c', 'CREDIT', 40, previousDay));
     const service = makeService(repo);
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.todaysSales, 0);
     assert.strictEqual(summary.todaysExpenses, 0);
     assert.strictEqual(summary.paymentsReceived, 0);
@@ -298,7 +330,7 @@ describe('dashboard service - transaction type isolation', () => {
   it('SALE contributes only to todaysSales', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'SALE', 100, NOW));
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.deepStrictEqual(zeroToday(summary), {
       sales: 100,
@@ -311,7 +343,7 @@ describe('dashboard service - transaction type isolation', () => {
   it('EXPENSE contributes only to todaysExpenses', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'EXPENSE', 100, NOW));
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.deepStrictEqual(zeroToday(summary), {
       sales: 0,
@@ -324,7 +356,7 @@ describe('dashboard service - transaction type isolation', () => {
   it('PAYMENT contributes only to paymentsReceived', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'PAYMENT', 100, NOW));
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.deepStrictEqual(zeroToday(summary), {
       sales: 0,
@@ -337,7 +369,7 @@ describe('dashboard service - transaction type isolation', () => {
   it('CREDIT contributes only to newCredit', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'CREDIT', 100, NOW));
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.deepStrictEqual(zeroToday(summary), {
       sales: 0,
@@ -350,12 +382,13 @@ describe('dashboard service - transaction type isolation', () => {
   it('SALE and EXPENSE do not affect totalOutstanding', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [
         makeTransaction('s', 'SALE', 1000, NOW),
         makeTransaction('e', 'EXPENSE', 500, NOW),
       ],
     });
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.totalOutstanding, 0);
   });
@@ -365,29 +398,32 @@ describe('dashboard service - outstanding edge cases', () => {
   it('multiple customers with different CREDIT/PAYMENT histories', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [
         makeTransaction('a1', 'CREDIT', 500, NOW),
         makeTransaction('a2', 'PAYMENT', 200, NOW),
       ],
     });
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [
         makeTransaction('b1', 'CREDIT', 300, NOW),
         makeTransaction('b2', 'PAYMENT', 50, NOW),
       ],
     });
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.totalOutstanding, 550, '(500-200) + (300-50)');
   });
 
   it('a customer with no transactions contributes zero', async () => {
     const repo = new InMemoryDashboardRepository();
-    repo.groups.push({ transactions: [] });
+    repo.groups.push({ businessId: BUSINESS_ID, transactions: [] });
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [makeTransaction('c1', 'CREDIT', 250, NOW)],
     });
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.totalOutstanding, 250);
   });
@@ -395,12 +431,13 @@ describe('dashboard service - outstanding edge cases', () => {
   it('an overpaid customer preserves the negative outstanding balance', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
+      businessId: BUSINESS_ID,
       transactions: [
         makeTransaction('c1', 'CREDIT', 100, NOW),
         makeTransaction('c2', 'PAYMENT', 300, NOW),
       ],
     });
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.totalOutstanding, -200, 'negative balances are not floored at zero');
   });
@@ -414,7 +451,7 @@ describe('dashboard service - recent transactions', () => {
         makeTransaction(`t${i}`, 'CREDIT', i + 1, new Date(NOW.getTime() - i * 1000))
       );
     }
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.recentTransactions.length, 5);
     assert.deepStrictEqual(
@@ -428,14 +465,14 @@ describe('dashboard service - recent transactions', () => {
     const repo = new InMemoryDashboardRepository();
     repo.transactions.push(makeTransaction('t1', 'CREDIT', 1, NOW));
     repo.transactions.push(makeTransaction('t2', 'CREDIT', 2, new Date(NOW.getTime() - 1000)));
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.recentTransactions.length, 2);
   });
 
   it('returns an empty array for empty history', async () => {
     const repo = new InMemoryDashboardRepository();
-    const summary = await makeService(repo).getDashboardSummary(USER_ID);
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.deepStrictEqual(summary.recentTransactions, []);
   });
@@ -446,7 +483,7 @@ describe('dashboard service - business name fallbacks', () => {
     const repo = new InMemoryDashboardRepository();
     const service = makeService(repo, { getBusinessName: async () => 'Raju General Store' });
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.businessName, 'Raju General Store');
   });
 
@@ -457,7 +494,7 @@ describe('dashboard service - business name fallbacks', () => {
       fallbackBusinessName: 'Fallback',
     });
 
-    const summary = await service.getDashboardSummary(USER_ID);
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
     assert.strictEqual(summary.businessName, 'Fallback');
   });
 
@@ -471,7 +508,7 @@ describe('dashboard service - business name fallbacks', () => {
         now: () => NOW,
         getBusinessName: async () => undefined,
       });
-      const summary = await service.getDashboardSummary(USER_ID);
+      const summary = await service.getDashboardSummary(BUSINESS_ID);
       assert.strictEqual(summary.businessName, 'My Business');
     } finally {
       if (previous === undefined) delete process.env.DASHBOARD_BUSINESS_NAME;
@@ -489,7 +526,7 @@ describe('dashboard service - business name fallbacks', () => {
         now: () => NOW,
         getBusinessName: async () => undefined,
       });
-      const summary = await service.getDashboardSummary(USER_ID);
+      const summary = await service.getDashboardSummary(BUSINESS_ID);
       assert.strictEqual(summary.businessName, 'My Business');
     } finally {
       if (previous === undefined) delete process.env.DASHBOARD_BUSINESS_NAME;
@@ -507,7 +544,7 @@ describe('dashboard service - business name fallbacks', () => {
         now: () => NOW,
         getBusinessName: async () => undefined,
       });
-      const summary = await service.getDashboardSummary(USER_ID);
+      const summary = await service.getDashboardSummary(BUSINESS_ID);
       assert.strictEqual(summary.businessName, 'Env Configured Shop');
     } finally {
       if (previous === undefined) delete process.env.DASHBOARD_BUSINESS_NAME;
@@ -526,7 +563,7 @@ describe('dashboard service - error handling', () => {
     });
 
     await assert.rejects(
-      () => service.getDashboardSummary(USER_ID),
+      () => service.getDashboardSummary(BUSINESS_ID),
       /user lookup failed/
     );
   });
@@ -535,7 +572,7 @@ describe('dashboard service - error handling', () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('not used'); },
       findById: async () => { throw new Error('not used'); },
-      listForUser: async () => [],
+      listForBusiness: async () => [],
       listForCustomer: async () => [],
       listCustomerTransactionGroups: async () => { throw new Error('groups failed'); },
       findHistory: async () => { throw new Error('not used'); },
@@ -543,8 +580,153 @@ describe('dashboard service - error handling', () => {
     const service = createDashboardService({ repository: failingRepo, now: () => NOW });
 
     await assert.rejects(
-      () => service.getDashboardSummary(USER_ID),
+      () => service.getDashboardSummary(BUSINESS_ID),
       /groups failed/
     );
+  });
+});
+
+describe('dashboard service - Decimal integration', () => {
+  it('daily totals preserve fractional amounts', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('s1', 'SALE', '100.50', NOW));
+    repo.transactions.push(makeTransaction('s2', 'SALE', '25.25', NOW));
+    repo.transactions.push(makeTransaction('e1', 'EXPENSE', '10.75', NOW));
+    repo.transactions.push(makeTransaction('p1', 'PAYMENT', '5.50', NOW));
+    repo.transactions.push(makeTransaction('c1', 'CREDIT', '200.25', NOW));
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+    assert.strictEqual(summary.todaysSales, 125.75);
+    assert.strictEqual(summary.todaysExpenses, 10.75);
+    assert.strictEqual(summary.paymentsReceived, 5.5);
+    assert.strictEqual(summary.newCredit, 200.25);
+  });
+
+  it('totalOutstanding across multiple customers preserves fractional precision', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [
+        makeTransaction('a1', 'CREDIT', '450.50', NOW),
+        makeTransaction('a2', 'PAYMENT', '100.25', NOW),
+      ],
+    });
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [
+        makeTransaction('b1', 'CREDIT', '200.75', NOW),
+        makeTransaction('b2', 'PAYMENT', '20.50', NOW),
+      ],
+    });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+    assert.strictEqual(summary.totalOutstanding, 530.5);
+  });
+
+  it('response monetary values are numbers, not Decimal objects or concatenated strings', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('s1', 'SALE', '100.50', NOW));
+    repo.groups.push({ businessId: BUSINESS_ID, transactions: [] });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+    for (const key of ['todaysSales', 'todaysExpenses', 'paymentsReceived', 'newCredit', 'totalOutstanding'] as const) {
+      assert.strictEqual(typeof summary[key], 'number', `${key} must be a number`);
+    }
+    assert.strictEqual(summary.todaysSales, 100.5);
+  });
+
+  it('integer-based dashboard behavior remains correct', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('s1', 'SALE', 100, NOW));
+    repo.transactions.push(makeTransaction('p1', 'PAYMENT', 50, NOW));
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [makeTransaction('c1', 'CREDIT', 500, NOW)],
+    });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+    assert.strictEqual(summary.todaysSales, 100);
+    assert.strictEqual(summary.paymentsReceived, 50);
+    assert.strictEqual(summary.totalOutstanding, 500);
+  });
+});
+
+describe('dashboard service - multi-tenant scoping', () => {
+  it('passes the explicit businessId to both repository reads', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.groups.push({ businessId: BUSINESS_ID, transactions: [] });
+    const service = makeService(repo);
+
+    await service.getDashboardSummary(BUSINESS_ID);
+
+    assert.deepStrictEqual(repo.businessReads, [BUSINESS_ID, BUSINESS_ID]);
+  });
+
+  it('excludes transactions from another business', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('own', 'SALE', '100.50', NOW));
+    repo.transactions.push(makeTransaction(
+      'foreign', 'SALE', '999.99', NOW,
+      { businessId: OTHER_BUSINESS_ID, customerId: 'c-foreign' }
+    ));
+    repo.groups.push({ businessId: BUSINESS_ID, transactions: [makeTransaction('b1', 'CREDIT', '200.25', NOW)] });
+    repo.groups.push({
+      businessId: OTHER_BUSINESS_ID,
+      transactions: [makeTransaction('b2', 'CREDIT', '888.88', NOW, { businessId: OTHER_BUSINESS_ID })],
+    });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+
+    assert.strictEqual(summary.todaysSales, 100.5);
+    assert.strictEqual(summary.totalOutstanding, 200.25);
+    assert.strictEqual(summary.recentTransactions.length, 1);
+    assert.strictEqual(summary.recentTransactions[0].id, 'own');
+  });
+
+  it('VOIDED transactions are excluded from totals and recent list', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('active', 'SALE', '100.50', NOW));
+    repo.transactions.push(makeTransaction('void', 'SALE', '900', NOW, { status: 'VOIDED' }));
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [
+        makeTransaction('c1', 'CREDIT', '500', NOW),
+        makeTransaction('c2', 'CREDIT', '700', NOW, { status: 'VOIDED' }),
+      ],
+    });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+
+    assert.strictEqual(summary.todaysSales, 100.5);
+    assert.strictEqual(summary.totalOutstanding, 500);
+    assert.strictEqual(summary.recentTransactions.length, 1);
+    assert.strictEqual(summary.recentTransactions[0].id, 'active');
+  });
+
+  it('a second business sees only its own data with the same service instance', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.transactions.push(makeTransaction('own', 'SALE', '10.50', NOW));
+    repo.transactions.push(makeTransaction(
+      'other', 'SALE', '20.25', NOW,
+      { businessId: OTHER_BUSINESS_ID, customerId: 'c-other' }
+    ));
+    const service = makeService(repo);
+
+    const own = await service.getDashboardSummary(BUSINESS_ID);
+    const other = await service.getDashboardSummary(OTHER_BUSINESS_ID);
+
+    assert.strictEqual(own.todaysSales, 10.5);
+    assert.strictEqual(own.recentTransactions.length, 1);
+    assert.strictEqual(own.recentTransactions[0].id, 'own');
+    assert.strictEqual(other.todaysSales, 20.25);
+    assert.strictEqual(other.recentTransactions.length, 1);
+    assert.strictEqual(other.recentTransactions[0].id, 'other');
+    assert.deepStrictEqual(repo.businessReads, [BUSINESS_ID, BUSINESS_ID, OTHER_BUSINESS_ID, OTHER_BUSINESS_ID]);
   });
 });

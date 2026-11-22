@@ -16,10 +16,17 @@ export const READ_INTENTS = [
 
 export type TransactionType = 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
 
+export type PreviewTenantContext = {
+  businessId: string;
+  createdByUserId: string;
+};
+
 export type PreviewState = 'pending' | 'confirming' | 'confirmed' | 'cancelled';
 
 export type TransactionPreview = {
   id: string;
+  businessId: string;
+  createdByUserId: string;
   intent: ParsedIntent['intent'];
   customerName?: string;
   amount?: number;

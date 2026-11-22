@@ -6,6 +6,7 @@ import {
   READ_INTENTS,
   WRITE_INTENTS,
   type PreviewStore,
+  type PreviewTenantContext,
   type TransactionPreview,
   type TransactionType,
 } from './previewStore.js';
@@ -53,10 +54,24 @@ function resolveTtlMs(): number {
   return DEFAULT_TTL_MS;
 }
 
+function assertValidContext(context: PreviewTenantContext): void {
+  if (
+    !context ||
+    typeof context.businessId !== 'string' ||
+    context.businessId.trim() === '' ||
+    typeof context.createdByUserId !== 'string' ||
+    context.createdByUserId.trim() === ''
+  ) {
+    throw new Error('Preview tenant context is required.');
+  }
+}
+
 export function buildPreview(
   parsed: ParsedIntent,
+  context: PreviewTenantContext,
   now: () => number = Date.now
 ): TransactionPreview {
+  assertValidContext(context);
   const type = intentToTransactionType[parsed.intent];
 
   const readyForConfirmation =
@@ -67,6 +82,8 @@ export function buildPreview(
 
   return {
     id: randomUUID(),
+    businessId: context.businessId,
+    createdByUserId: context.createdByUserId,
     intent: parsed.intent,
     customerName: parsed.customerName,
     amount: parsed.amount,
@@ -92,15 +109,22 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     return now() - created >= ttlMs;
   }
 
-  function createPreview(parsed: ParsedIntent): TransactionPreview {
-    const preview = buildPreview(parsed, now);
+  function createPreview(
+    parsed: ParsedIntent,
+    context: PreviewTenantContext
+  ): TransactionPreview {
+    const preview = buildPreview(parsed, context, now);
     store.create(preview);
     return preview;
   }
 
-  function createPreviewFromTranscript(transcript: string): Promise<TransactionPreview> {
+  function createPreviewFromTranscript(
+    transcript: string,
+    context: PreviewTenantContext
+  ): Promise<TransactionPreview> {
+    assertValidContext(context);
     // Interpretation is pure: it never creates or updates a transaction.
-    return interpretTranscript(transcript).then((parsed) => createPreview(parsed));
+    return interpretTranscript(transcript).then((parsed) => createPreview(parsed, context));
   }
 
   function getPreviewResult(id: string): PreviewResult {
@@ -163,7 +187,8 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
 
   async function confirmPreview(
     id: string,
-    committer: TransactionCommitter
+    committer: TransactionCommitter,
+    context?: PreviewTenantContext
   ): Promise<ConfirmResult> {
     const preview = store.get(id);
 
@@ -181,6 +206,18 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     }
     if (preview.state === 'confirming') {
       return { ok: false, code: 'CONFIRMATION_IN_PROGRESS', message: 'Another confirmation is already in progress for this preview.' };
+    }
+
+    if (
+      context &&
+      (context.businessId !== preview.businessId ||
+        context.createdByUserId !== preview.createdByUserId)
+    ) {
+      return {
+        ok: false,
+        code: 'CONTEXT_MISMATCH',
+        message: 'Preview tenant context does not match the confirmation context.',
+      };
     }
 
     if (isReadIntent(preview.intent)) {
@@ -226,6 +263,8 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
 
     try {
       const result = await committer({
+        businessId: claimed.businessId,
+        createdByUserId: claimed.createdByUserId,
         customerName: claimed.customerName as string,
         amount: claimed.amount as number,
         type: claimed.type as TransactionType,

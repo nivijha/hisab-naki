@@ -1,16 +1,24 @@
+import { Prisma } from '@prisma/client';
 import {
   PrismaTransactionRepository,
   type TransactionRepository,
   type CustomerTransactionGroup,
 } from '../../repositories/transactionRepository.js';
-import { calculateOutstandingAmount, formatCurrency, toCurrencyText } from '../../utils/ledger.js';
+import {
+  calculateOutstandingAmount,
+  formatCurrency,
+  toCurrencyText,
+  toDisplayNumber,
+} from '../../utils/ledger.js';
 import {
   createDashboardService,
   getDashboardSummary as getDashboardSummaryFromService,
 } from '../dashboard/dashboardService.js';
-import { ensureCustomer, ensureDefaultUser, getCustomerByName } from './customerService.js';
+import { ensureCustomer, getCustomerByName } from './customerService.js';
 
 export type CreateTransactionInput = {
+  businessId: string;
+  createdByUserId: string;
   customerName: string;
   amount: number;
   type: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
@@ -39,13 +47,11 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
 
 export type TransactionCustomerGateway = {
-  ensureDefaultUser: typeof ensureDefaultUser;
   ensureCustomer: typeof ensureCustomer;
   getCustomerByName: typeof getCustomerByName;
 };
 
 const defaultGateway: TransactionCustomerGateway = {
-  ensureDefaultUser,
   ensureCustomer,
   getCustomerByName,
 };
@@ -55,11 +61,15 @@ export function createTransactionService(
   gateway: TransactionCustomerGateway = defaultGateway
 ) {
   async function createTransaction(input: CreateTransactionInput) {
-    const user = await gateway.ensureDefaultUser();
-    const customer = await gateway.ensureCustomer(user.id, input.customerName);
+    const customer = await gateway.ensureCustomer(
+      input.businessId,
+      input.createdByUserId,
+      input.customerName
+    );
 
     const transaction = await repository.create({
-      userId: user.id,
+      businessId: input.businessId,
+      createdByUserId: input.createdByUserId,
       customerId: customer.id,
       type: input.type,
       amount: Math.round(input.amount),
@@ -69,14 +79,16 @@ export function createTransactionService(
     return {
       transaction,
       customer,
-      outstandingBalance: calculateOutstandingAmount(
-        await repository.listForCustomer(customer.id, user.id)
+      outstandingBalance: toDisplayNumber(
+        calculateOutstandingAmount(
+          await repository.listForCustomer(customer.id, input.businessId)
+        )
       ),
     };
   }
 
-  async function getTransactionsForUser(userId: string) {
-    const transactions = await repository.listForUser(userId);
+  async function getTransactionsForUser(businessId: string) {
+    const transactions = await repository.listForBusiness(businessId);
 
     return transactions.map((transaction) => ({
       ...transaction,
@@ -84,8 +96,8 @@ export function createTransactionService(
     }));
   }
 
-  async function getTransactionById(userId: string, transactionId: string) {
-    const transaction = await repository.findById(transactionId, userId);
+  async function getTransactionById(businessId: string, transactionId: string) {
+    const transaction = await repository.findById(transactionId, businessId);
 
     if (!transaction) {
       return null;
@@ -98,7 +110,7 @@ export function createTransactionService(
   }
 
   async function getTransactionHistory(
-    userId: string,
+    businessId: string,
     filters: TransactionHistoryFilters = {}
   ): Promise<TransactionHistoryResult> {
     const requestedPage = filters.page ?? DEFAULT_PAGE;
@@ -112,7 +124,7 @@ export function createTransactionService(
       : DEFAULT_LIMIT;
 
     const { transactions, total } = await repository.findHistory({
-      userId,
+      businessId,
       page,
       limit,
       type: filters.type,
@@ -133,20 +145,14 @@ export function createTransactionService(
     };
   }
 
-  const dashboardService = createDashboardService({
-    repository,
-    getBusinessName: async (id) => {
-      const user = await gateway.ensureDefaultUser();
-      return user?.id === id ? user.businessName : undefined;
-    },
-  });
+  const dashboardService = createDashboardService({ repository });
 
-  async function getDashboardSummary(userId: string) {
-    return dashboardService.getDashboardSummary(userId);
+  async function getDashboardSummary(businessId: string) {
+    return dashboardService.getDashboardSummary(businessId);
   }
 
-  async function getCustomerBalanceForName(userId: string, customerName: string) {
-    const customer = await gateway.getCustomerByName(userId, customerName);
+  async function getCustomerBalanceForName(businessId: string, customerName: string) {
+    const customer = await gateway.getCustomerByName(businessId, customerName);
 
     if (!customer) {
       return null;
@@ -156,22 +162,22 @@ export function createTransactionService(
 
     return {
       customerName: customer.name,
-      outstandingBalance: outstanding,
+      outstandingBalance: toDisplayNumber(outstanding),
       balanceText: toCurrencyText(outstanding),
     };
   }
 
-  async function getTotalOutstandingForUser(userId: string) {
+  async function getTotalOutstandingForUser(businessId: string) {
     const customers: CustomerTransactionGroup[] =
-      await repository.listCustomerTransactionGroups(userId);
+      await repository.listCustomerTransactionGroups(businessId);
 
     const total = customers.reduce(
-      (sum, customer) => sum + calculateOutstandingAmount(customer.transactions),
-      0
+      (sum, customer) => sum.plus(calculateOutstandingAmount(customer.transactions)),
+      new Prisma.Decimal(0)
     );
 
     return {
-      totalOutstanding: total,
+      totalOutstanding: toDisplayNumber(total),
       totalOutstandingText: toCurrencyText(total),
     };
   }
@@ -193,29 +199,29 @@ export async function createTransaction(input: CreateTransactionInput) {
   return defaultService.createTransaction(input);
 }
 
-export async function getTransactionsForUser(userId: string) {
-  return defaultService.getTransactionsForUser(userId);
+export async function getTransactionsForUser(businessId: string) {
+  return defaultService.getTransactionsForUser(businessId);
 }
 
-export async function getTransactionById(userId: string, transactionId: string) {
-  return defaultService.getTransactionById(userId, transactionId);
+export async function getTransactionById(businessId: string, transactionId: string) {
+  return defaultService.getTransactionById(businessId, transactionId);
 }
 
 export async function getTransactionHistory(
-  userId: string,
+  businessId: string,
   filters: TransactionHistoryFilters = {}
 ) {
-  return defaultService.getTransactionHistory(userId, filters);
+  return defaultService.getTransactionHistory(businessId, filters);
 }
 
-export async function getDashboardSummary(userId: string) {
-  return getDashboardSummaryFromService(userId);
+export async function getDashboardSummary(businessId: string) {
+  return getDashboardSummaryFromService(businessId);
 }
 
-export async function getCustomerBalanceForName(userId: string, customerName: string) {
-  return defaultService.getCustomerBalanceForName(userId, customerName);
+export async function getCustomerBalanceForName(businessId: string, customerName: string) {
+  return defaultService.getCustomerBalanceForName(businessId, customerName);
 }
 
-export async function getTotalOutstandingForUser(userId: string) {
-  return defaultService.getTotalOutstandingForUser(userId);
+export async function getTotalOutstandingForUser(businessId: string) {
+  return defaultService.getTotalOutstandingForUser(businessId);
 }

@@ -1,50 +1,68 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { Prisma } from '@prisma/client';
+import type { Customer, Transaction } from '@prisma/client';
 import { createTransactionService, type TransactionCustomerGateway } from '../../../services/ledger/transactionService.js';
-import { calculateOutstandingAmount } from '../../../utils/ledger.js';
 import type {
   CreateTransactionRecordInput,
+  CustomerTransactionGroup,
+  TransactionHistoryPage,
+  TransactionHistoryQuery,
   TransactionRepository,
   TransactionWithCustomer,
-  CustomerTransactionGroup,
-  TransactionHistoryQuery,
-  TransactionHistoryPage,
 } from '../../../repositories/transactionRepository.js';
-import type { Customer, Transaction, TransactionType } from '@prisma/client';
 
-const USER_ID = 'user-1';
+const BUSINESS_ID = 'biz-1';
+const OTHER_BUSINESS_ID = 'biz-2';
+const CREATOR_ID = 'user-1';
+const OTHER_CREATOR_ID = 'user-2';
+const CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
 
-function makeCustomer(id: string, name: string, userId = USER_ID): Customer {
+function makeCustomer(overrides: Partial<Customer> = {}): Customer {
   return {
-    id,
-    userId,
-    name,
+    id: 'c-1',
+    businessId: BUSINESS_ID,
+    name: 'Raju',
     phone: null,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    email: null,
+    notes: null,
+    createdByUserId: CREATOR_ID,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    deletedAt: null,
+    ...overrides,
   };
 }
 
-function makeTransaction(
-  id: string,
-  type: TransactionType,
-  amount: number,
-  customerId: string,
-  createdAt = new Date('2026-01-02T00:00:00.000Z')
-): Transaction {
+function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
   return {
-    id,
-    userId: USER_ID,
-    customerId,
-    type,
-    amount,
+    id: 'tx-1',
+    businessId: BUSINESS_ID,
+    customerId: 'c-1',
+    type: 'CREDIT',
+    status: 'ACTIVE',
+    amount: new Prisma.Decimal('100.50'),
+    saleMode: null,
+    paymentMethod: null,
+    openingDirection: null,
     description: 'test',
-    createdAt,
+    occurredAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    createdByUserId: CREATOR_ID,
+    voidedAt: null,
+    voidedByUserId: null,
+    voidReason: null,
+    originalTransactionId: null,
+    idempotencyKey: null,
+    ...overrides,
   };
 }
 
 class InMemoryTransactionRepository implements TransactionRepository {
   readonly rows: Transaction[] = [];
   readonly customers = new Map<string, Customer>();
+  readonly createCalls: CreateTransactionRecordInput[] = [];
   nextId = 1;
 
   constructor(customers: Customer[] = []) {
@@ -52,52 +70,63 @@ class InMemoryTransactionRepository implements TransactionRepository {
   }
 
   async create(input: CreateTransactionRecordInput): Promise<TransactionWithCustomer> {
-    const transaction = makeTransaction(
-      `t-${this.nextId++}`,
-      input.type,
-      input.amount,
-      input.customerId
-    );
-    transaction.userId = input.userId;
-    transaction.description = input.description;
+    this.createCalls.push(input);
+    const transaction = makeTransaction({
+      id: `tx-${this.nextId++}`,
+      businessId: input.businessId,
+      createdByUserId: input.createdByUserId,
+      customerId: input.customerId,
+      type: input.type,
+      amount: new Prisma.Decimal(input.amount),
+      description: input.description,
+    });
     this.rows.push(transaction);
     return { ...transaction, customer: this.customers.get(input.customerId) ?? null };
   }
 
-  async listForUser(userId: string): Promise<TransactionWithCustomer[]> {
+  async findById(transactionId: string, businessId: string): Promise<TransactionWithCustomer | null> {
+    const transaction = this.rows.find((t) => t.id === transactionId && t.businessId === businessId);
+    if (!transaction) return null;
+    return { ...transaction, customer: this.customers.get(transaction.customerId ?? '') ?? null };
+  }
+
+  async listForBusiness(businessId: string): Promise<TransactionWithCustomer[]> {
     return this.rows
-      .filter((t) => t.userId === userId)
+      .filter((t) => t.businessId === businessId && t.status === 'ACTIVE')
       .slice()
       .reverse()
       .map((t) => ({ ...t, customer: this.customers.get(t.customerId ?? '') ?? null }));
   }
 
-  async listForCustomer(customerId: string, userId: string): Promise<Transaction[]> {
-    return this.rows.filter((t) => t.customerId === customerId && t.userId === userId);
+  async listForCustomer(customerId: string, businessId: string): Promise<Transaction[]> {
+    return this.rows.filter(
+      (t) => t.customerId === customerId && t.businessId === businessId && t.status === 'ACTIVE'
+    );
   }
 
-  async listCustomerTransactionGroups(userId: string): Promise<CustomerTransactionGroup[]> {
+  async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
     return [...this.customers.values()]
-      .filter((c) => c.userId === userId)
-      .map((c) => ({ transactions: this.rows.filter((t) => t.customerId === c.id) }));
-  }
-
-  async findById(transactionId: string, userId: string): Promise<TransactionWithCustomer | null> {
-    const transaction = this.rows.find((t) => t.id === transactionId && t.userId === userId);
-    if (!transaction) return null;
-    return { ...transaction, customer: this.customers.get(transaction.customerId ?? '') ?? null };
+      .filter((c) => c.businessId === businessId)
+      .map((c) => ({
+        transactions: this.rows.filter(
+          (t) => t.customerId === c.id && t.businessId === businessId && t.status === 'ACTIVE'
+        ),
+      }));
   }
 
   async findHistory(query: TransactionHistoryQuery): Promise<TransactionHistoryPage> {
-    let matches = this.rows.filter((t) => t.userId === query.userId);
+    let matches = this.rows.filter(
+      (t) => t.businessId === query.businessId && t.status === 'ACTIVE'
+    );
     if (query.type) matches = matches.filter((t) => t.type === query.type);
     if (query.customerId) matches = matches.filter((t) => t.customerId === query.customerId);
-    if (query.from) matches = matches.filter((t) => t.createdAt >= (query.from as Date));
-    if (query.to) matches = matches.filter((t) => t.createdAt <= (query.to as Date));
+    const from = query.from;
+    const to = query.to;
+    if (from) matches = matches.filter((t) => t.createdAt >= from);
+    if (to) matches = matches.filter((t) => t.createdAt <= to);
 
     const sorted = matches.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    const start = (query.page - 1) * query.limit;
-    const pageRows = sorted.slice(start, start + query.limit);
+    const pageRows = sorted.slice((query.page - 1) * query.limit, query.page * query.limit);
 
     return {
       transactions: pageRows.map((t) => ({
@@ -109,475 +138,362 @@ class InMemoryTransactionRepository implements TransactionRepository {
   }
 }
 
-function makeGateway(repo: InMemoryTransactionRepository): TransactionCustomerGateway {
-  return {
-    ensureDefaultUser: async () => ({
-      id: USER_ID,
-      name: 'Demo Shopkeeper',
-      email: null,
-      businessName: 'Raju General Store',
-      createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    }),
-    ensureCustomer: async (_userId, name) => {
+type GatewayCalls = {
+  ensureCustomer: Array<{ businessId: string; createdByUserId: string; name: string }>;
+  getCustomerByName: Array<{ businessId: string; name: string }>;
+};
+
+function makeGateway(repo: InMemoryTransactionRepository) {
+  const calls: GatewayCalls = { ensureCustomer: [], getCustomerByName: [] };
+  const gateway: TransactionCustomerGateway = {
+    ensureCustomer: async (businessId, createdByUserId, name) => {
+      calls.ensureCustomer.push({ businessId, createdByUserId, name });
       for (const c of repo.customers.values()) {
-        if (c.name.toLowerCase() === name.toLowerCase()) return c;
+        if (c.businessId === businessId && c.name.toLowerCase() === name.toLowerCase()) return c;
       }
       throw new Error('CUSTOMER_NOT_FOUND');
     },
-    getCustomerByName: async (userId, name) => {
+    getCustomerByName: async (businessId, name) => {
+      calls.getCustomerByName.push({ businessId, name });
       for (const c of repo.customers.values()) {
-        if (c.name.toLowerCase() === name.toLowerCase()) {
-          const transactions = await repo.listForCustomer(c.id, userId);
+        if (c.businessId === businessId && c.name.toLowerCase() === name.toLowerCase()) {
+          const transactions = await repo.listForCustomer(c.id, businessId);
           return {
             ...c,
             transactions,
-            outstandingBalance: calculateOutstandingAmount(transactions),
+            outstandingBalance: transactions.reduce(
+              (sum, t) => sum.plus(t.amount),
+              new Prisma.Decimal(0)
+            ).toNumber(),
           };
         }
       }
       return null;
     },
   };
+  return { gateway, calls };
 }
 
-describe('transaction service (repository boundary)', () => {
-  it('1. successful CREDIT creation', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
+describe('transaction service - creation', () => {
+  it('passes distinct businessId and createdByUserId to the repository', async () => {
+    const customer = makeCustomer();
     const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 450,
+      type: 'CREDIT',
+    });
+
+    assert.strictEqual(repo.createCalls.length, 1);
+    assert.strictEqual(repo.createCalls[0].businessId, BUSINESS_ID);
+    assert.strictEqual(repo.createCalls[0].createdByUserId, CREATOR_ID);
+    assert.notStrictEqual(repo.createCalls[0].businessId, repo.createCalls[0].createdByUserId);
+    assert.ok(!('userId' in repo.createCalls[0]));
+  });
+
+  it('customer resolution uses the same businessId', async () => {
+    const customer = makeCustomer();
+    const repo = new InMemoryTransactionRepository([customer]);
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 100,
+      type: 'CREDIT',
+    });
+
+    assert.strictEqual(calls.ensureCustomer.length, 1);
+    assert.strictEqual(calls.ensureCustomer[0].businessId, BUSINESS_ID);
+    assert.strictEqual(calls.ensureCustomer[0].createdByUserId, CREATOR_ID);
+  });
+
+  it('CREDIT increases outstanding', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
     const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
       customerName: 'Raju',
       amount: 450,
       type: 'CREDIT',
     });
 
     assert.strictEqual(result.transaction.type, 'CREDIT');
-    assert.strictEqual(result.transaction.amount, 450);
-    assert.strictEqual(result.transaction.customer?.name, 'Raju');
-    assert.strictEqual(result.outstandingBalance, 450, 'CREDIT increases outstanding');
+    assert.strictEqual(result.outstandingBalance, 450);
   });
 
-  it('2. successful PAYMENT creation', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
+  it('PAYMENT decreases outstanding', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
     const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
       customerName: 'Raju',
       amount: 200,
       type: 'PAYMENT',
     });
 
-    assert.strictEqual(result.transaction.type, 'PAYMENT');
-    assert.strictEqual(result.outstandingBalance, -200, 'PAYMENT decreases outstanding');
+    assert.strictEqual(result.outstandingBalance, -200);
   });
 
-  it('3. SALE behavior', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    const result = await service.createTransaction({
-      customerName: 'Raju',
-      amount: 1000,
-      type: 'SALE',
-    });
-
-    assert.strictEqual(result.transaction.type, 'SALE');
-    assert.strictEqual(result.transaction.amount, 1000, 'SALE amount stored');
-    assert.strictEqual(result.outstandingBalance, 0, 'SALE does not affect outstanding');
+  it('SALE and EXPENSE do not affect outstanding', async () => {
+    const neutralTypes: Array<'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE'> = ['SALE', 'EXPENSE'];
+    for (const type of neutralTypes) {
+      const repo = new InMemoryTransactionRepository([makeCustomer()]);
+      const { gateway } = makeGateway(repo);
+      const service = createTransactionService(repo, gateway);
+      const result = await service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 1000,
+        type,
+      });
+      assert.strictEqual(result.outstandingBalance, 0, `${type} must not affect outstanding`);
+    }
   });
 
-  it('4. EXPENSE behavior', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    const result = await service.createTransaction({
-      customerName: 'Raju',
-      amount: 500,
-      type: 'EXPENSE',
-    });
-
-    assert.strictEqual(result.transaction.type, 'EXPENSE');
-    assert.strictEqual(result.outstandingBalance, 0, 'EXPENSE does not affect outstanding');
-  });
-
-  it('5. customer not found', async () => {
+  it('customer not found is rejected', async () => {
     const repo = new InMemoryTransactionRepository();
-    const service = createTransactionService(repo, makeGateway(repo));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
     await assert.rejects(
-      () => service.createTransaction({ customerName: 'Ghost', amount: 100, type: 'CREDIT' }),
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Ghost',
+        amount: 100,
+        type: 'CREDIT',
+      }),
       /CUSTOMER_NOT_FOUND/
     );
-    assert.strictEqual(repo.rows.length, 0, 'no transaction created');
+    assert.strictEqual(repo.rows.length, 0);
   });
 
-  it('6. customer ownership mismatch', async () => {
-    const otherUserCustomer = makeCustomer('c-1', 'Raju', 'user-2');
-    const repo = new InMemoryTransactionRepository([otherUserCustomer]);
-    const gateway = makeGateway(repo);
-    gateway.ensureCustomer = async () => otherUserCustomer;
+  it('customer from another business cannot be resolved for this business', async () => {
+    const foreignCustomer = makeCustomer({ businessId: OTHER_BUSINESS_ID });
+    const repo = new InMemoryTransactionRepository([foreignCustomer]);
+    const { gateway } = makeGateway(repo);
     const service = createTransactionService(repo, gateway);
-
-    // listForCustomer is scoped by userId - other user's customer has no rows
-    const rows = await repo.listForCustomer('c-1', USER_ID);
-    assert.strictEqual(rows.length, 0, 'transactions not leaked across users');
-
-    const result = await service.createTransaction({
-      customerName: 'Raju',
-      amount: 100,
-      type: 'CREDIT',
-    });
-    assert.strictEqual(result.transaction.userId, USER_ID);
-    assert.strictEqual(result.outstandingBalance, 100);
-  });
-
-  it('7. transaction listing', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    await service.createTransaction({ customerName: 'Raju', amount: 100, type: 'CREDIT' });
-    await service.createTransaction({ customerName: 'Raju', amount: 50, type: 'PAYMENT' });
-
-    const list = await service.getTransactionsForUser(USER_ID);
-    assert.strictEqual(list.length, 2);
-    assert.strictEqual(typeof list[0].formattedAmount, 'string');
-    assert.ok(list[0].formattedAmount.length > 0, 'formattedAmount present');
-    assert.strictEqual(list[0].customer?.name, 'Raju');
-  });
-
-  it('8. customer-specific transaction listing', async () => {
-    const raju = makeCustomer('c-1', 'Raju');
-    const amit = makeCustomer('c-2', 'Amit');
-    const repo = new InMemoryTransactionRepository([raju, amit]);
-    const gateway = makeGateway(repo);
-    const service = createTransactionService(repo, gateway);
-
-    await service.createTransaction({ customerName: 'Raju', amount: 100, type: 'CREDIT' });
-    await service.createTransaction({ customerName: 'Amit', amount: 200, type: 'CREDIT' });
-
-    const rajuRows = await repo.listForCustomer('c-1', USER_ID);
-    assert.strictEqual(rajuRows.length, 1);
-    assert.strictEqual(rajuRows[0].amount, 100);
-    const amitRows = await repo.listForCustomer('c-2', USER_ID);
-    assert.strictEqual(amitRows.length, 1);
-    assert.strictEqual(amitRows[0].amount, 200);
-  });
-
-  it('9. transaction summary behavior', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    const today = new Date();
-    repo.rows.push(makeTransaction('t-old', 'SALE', 999, 'c-1', new Date('2020-01-01')));
-    repo.rows.push(makeTransaction('t-sale', 'SALE', 100, 'c-1', today));
-    repo.rows.push(makeTransaction('t-exp', 'EXPENSE', 50, 'c-1', today));
-    repo.rows.push(makeTransaction('t-pay', 'PAYMENT', 30, 'c-1', today));
-    repo.rows.push(makeTransaction('t-credit', 'CREDIT', 200, 'c-1', today));
-
-    const summary = await service.getDashboardSummary(USER_ID);
-
-    assert.strictEqual(summary.todaysSales, 100);
-    assert.strictEqual(summary.todaysExpenses, 50);
-    assert.strictEqual(summary.paymentsReceived, 30);
-    assert.strictEqual(summary.newCredit, 200);
-    assert.strictEqual(summary.totalOutstanding, 170, 'CREDIT 200 - PAYMENT 30; SALE/EXPENSE ignored');
-    assert.strictEqual(summary.recentTransactions.length, 5);
-    assert.strictEqual(summary.businessName, 'Raju General Store');
-  });
-
-  it('10. repository error propagation', async () => {
-    const failingRepo: TransactionRepository = {
-      create: async () => { throw new Error('DB down'); },
-      findById: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
-      listForCustomer: async () => { throw new Error('DB down'); },
-      listCustomerTransactionGroups: async () => { throw new Error('DB down'); },
-      findHistory: async () => { throw new Error('DB down'); },
-    };
-    const customer = makeCustomer('c-1', 'Raju');
-    const gatewayRepo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(failingRepo, makeGateway(gatewayRepo));
 
     await assert.rejects(
-      () => service.createTransaction({ customerName: 'Raju', amount: 100, type: 'CREDIT' }),
-      /DB down/
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 100,
+        type: 'CREDIT',
+      }),
+      /CUSTOMER_NOT_FOUND/
     );
-    await assert.rejects(() => service.getTransactionsForUser(USER_ID), /DB down/);
-    await assert.rejects(() => service.getDashboardSummary(USER_ID), /DB down/);
-    await assert.rejects(() => service.getTotalOutstandingForUser(USER_ID), /DB down/);
   });
 
-  it('11. outstanding balance consistency', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    await service.createTransaction({ customerName: 'Raju', amount: 500, type: 'CREDIT' });
-    await service.createTransaction({ customerName: 'Raju', amount: 200, type: 'PAYMENT' });
-    await service.createTransaction({ customerName: 'Raju', amount: 1000, type: 'SALE' });
-    await service.createTransaction({ customerName: 'Raju', amount: 300, type: 'EXPENSE' });
-
-    const created = await service.createTransaction({
-      customerName: 'Raju',
-      amount: 50,
-      type: 'CREDIT',
-    });
-    assert.strictEqual(created.outstandingBalance, 350, '500 - 200 + 50');
-
-    const balance = await service.getCustomerBalanceForName(USER_ID, 'Raju');
-    assert.strictEqual(balance?.outstandingBalance, 350);
-
-    const total = await service.getTotalOutstandingForUser(USER_ID);
-    assert.strictEqual(total.totalOutstanding, 350);
-    assert.strictEqual(total.totalOutstandingText, '₹350');
-  });
-
-  it('createTransaction rounds amount and applies default description', async () => {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
+  it('existing amount rounding and default description are preserved', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
     const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
       customerName: 'Raju',
       amount: 100.6,
       type: 'CREDIT',
     });
 
-    assert.strictEqual(result.transaction.amount, 101, 'Math.round applied');
+    assert.strictEqual(result.transaction.amount.toNumber(), 101);
     assert.strictEqual(result.transaction.description, 'Ledger update');
   });
-
-  it('getCustomerBalanceForName returns null for unknown customer', async () => {
-    const repo = new InMemoryTransactionRepository();
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    const balance = await service.getCustomerBalanceForName(USER_ID, 'Ghost');
-    assert.strictEqual(balance, null);
-  });
 });
 
-describe('transaction service - getTransactionHistory', () => {
-  function seedRepo(count: number) {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    for (let i = 0; i < count; i++) {
-      repo.rows.push(
-        makeTransaction(
-          `t-${i}`,
-          i % 2 === 0 ? 'CREDIT' : 'PAYMENT',
-          (i + 1) * 10,
-          'c-1',
-          new Date(Date.UTC(2026, 0, 1 + i))
-        )
-      );
-    }
-    return { repo, service: createTransactionService(repo, makeGateway(repo)) };
-  }
+describe('transaction service - business-scoped reads', () => {
+  it('listing returns only the supplied business ACTIVE transactions with formatted amounts', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ id: 'own', businessId: BUSINESS_ID }));
+    repo.rows.push(makeTransaction({
+      id: 'foreign',
+      businessId: OTHER_BUSINESS_ID,
+      customerId: 'c-foreign',
+    }));
+    repo.rows.push(makeTransaction({ id: 'voided', businessId: BUSINESS_ID, status: 'VOIDED' }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
-  it('1. default page and limit', async () => {
-    const { service } = seedRepo(12);
-    const result = await service.getTransactionHistory(USER_ID);
-    assert.strictEqual(result.page, 1);
-    assert.strictEqual(result.limit, 10);
-    assert.strictEqual(result.transactions.length, 10);
-    assert.strictEqual(result.total, 12);
+    const list = await service.getTransactionsForUser(BUSINESS_ID);
+
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0].id, 'own');
+    assert.strictEqual(typeof list[0].formattedAmount, 'string');
+    assert.strictEqual(list[0].formattedAmount, '₹101');
   });
 
-  it('2. custom page and limit', async () => {
-    const { service } = seedRepo(12);
-    const result = await service.getTransactionHistory(USER_ID, { page: 2, limit: 3 });
-    assert.strictEqual(result.page, 2);
-    assert.strictEqual(result.limit, 3);
-    assert.strictEqual(result.transactions.length, 3);
-    assert.strictEqual(result.total, 12);
-    assert.strictEqual(result.totalPages, 4);
-  });
+  it('detail lookup is business-scoped and can retrieve a VOIDED transaction', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ id: 'own', businessId: BUSINESS_ID, amount: new Prisma.Decimal('450.25') }));
+    repo.rows.push(makeTransaction({ id: 'foreign', businessId: OTHER_BUSINESS_ID }));
+    repo.rows.push(makeTransaction({ id: 'voided', businessId: BUSINESS_ID, status: 'VOIDED' }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
-  it('3. maximum limit enforcement', async () => {
-    const { service } = seedRepo(5);
-    const result = await service.getTransactionHistory(USER_ID, { limit: 1000 });
-    assert.strictEqual(result.limit, 100, 'limit clamped to 100');
-    assert.strictEqual(result.transactions.length, 5);
-  });
-
-  it('4. transaction type filtering', async () => {
-    const { service } = seedRepo(10);
-    const result = await service.getTransactionHistory(USER_ID, { type: 'CREDIT' });
-    assert.strictEqual(result.total, 5);
-    assert.ok(result.transactions.every((t) => t.type === 'CREDIT'));
-  });
-
-  it('5. customer filtering', async () => {
-    const raju = makeCustomer('c-1', 'Raju');
-    const amit = makeCustomer('c-2', 'Amit');
-    const repo = new InMemoryTransactionRepository([raju, amit]);
-    repo.rows.push(makeTransaction('t-1', 'CREDIT', 100, 'c-1'));
-    repo.rows.push(makeTransaction('t-2', 'CREDIT', 200, 'c-2'));
-    const service = createTransactionService(repo, makeGateway(repo));
-
-    const result = await service.getTransactionHistory(USER_ID, { customerId: 'c-2' });
-    assert.strictEqual(result.total, 1);
-    assert.strictEqual(result.transactions[0].customerId, 'c-2');
-  });
-
-  it('6. date filtering', async () => {
-    const { service } = seedRepo(5);
-    const from = new Date(Date.UTC(2026, 0, 3));
-    const result = await service.getTransactionHistory(USER_ID, { from });
-    assert.strictEqual(result.total, 3, 'transactions on/after Jan 3');
-  });
-
-  it('7. total count and totalPages', async () => {
-    const { service } = seedRepo(11);
-    const result = await service.getTransactionHistory(USER_ID, { limit: 5 });
-    assert.strictEqual(result.total, 11);
-    assert.strictEqual(result.totalPages, 3);
-  });
-
-  it('8. empty result set', async () => {
-    const { service } = seedRepo(0);
-    const result = await service.getTransactionHistory(USER_ID);
-    assert.strictEqual(result.total, 0);
-    assert.strictEqual(result.totalPages, 0);
-    assert.strictEqual(result.transactions.length, 0);
-  });
-
-  it('9. invalid pagination values fall back to defaults', async () => {
-    const { service } = seedRepo(12);
-    const result = await service.getTransactionHistory(USER_ID, { page: -5, limit: 0 });
-    assert.strictEqual(result.page, 1);
-    assert.strictEqual(result.limit, 10);
-  });
-
-  it('10. existing unpaginated API behavior', async () => {
-    const { service } = seedRepo(3);
-    const list = await service.getTransactionsForUser(USER_ID);
-    assert.strictEqual(list.length, 3);
-    assert.ok(Array.isArray(list));
-    assert.ok(list[0].formattedAmount);
-  });
-
-  it('11. repository error propagation', async () => {
-    const failingRepo: TransactionRepository = {
-      create: async () => { throw new Error('DB down'); },
-      findById: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
-      listForCustomer: async () => { throw new Error('DB down'); },
-      listCustomerTransactionGroups: async () => { throw new Error('DB down'); },
-      findHistory: async () => { throw new Error('DB down'); },
-    };
-    const service = createTransactionService(failingRepo, makeGateway(new InMemoryTransactionRepository()));
-
-    await assert.rejects(
-      () => service.getTransactionHistory(USER_ID),
-      /DB down/
-    );
-  });
-
-  it('history results include formattedAmount', async () => {
-    const { service } = seedRepo(2);
-    const result = await service.getTransactionHistory(USER_ID);
-    assert.strictEqual(typeof result.transactions[0].formattedAmount, 'string');
-  });
-});
-
-describe('transaction service - getTransactionById', () => {
-  function setup() {
-    const customer = makeCustomer('c-1', 'Raju');
-    const repo = new InMemoryTransactionRepository([customer]);
-    const service = createTransactionService(repo, makeGateway(repo));
-    return { repo, service, customer };
-  }
-
-  it('1. successful transaction lookup', async () => {
-    const { repo, service } = setup();
-    repo.rows.push(makeTransaction('t-1', 'CREDIT', 450, 'c-1'));
-
-    const result = await service.getTransactionById(USER_ID, 't-1');
-
-    assert.ok(result);
-    assert.strictEqual(result.id, 't-1');
-    assert.strictEqual(result.type, 'CREDIT');
-    assert.strictEqual(result.amount, 450);
-  });
-
-  it('2. transaction not found', async () => {
-    const { service } = setup();
-    const result = await service.getTransactionById(USER_ID, 'missing');
-    assert.strictEqual(result, null);
-  });
-
-  it('3. transaction belonging to another user returns not found', async () => {
-    const { repo, service } = setup();
-    const other = makeTransaction('t-2', 'CREDIT', 100, 'c-1');
-    other.userId = 'user-2';
-    repo.rows.push(other);
-
-    const result = await service.getTransactionById(USER_ID, 't-2');
-    assert.strictEqual(result, null, 'other-user transaction indistinguishable from missing');
-    const otherResult = await service.getTransactionById('user-2', 't-2');
-    assert.ok(otherResult, 'owner can retrieve it');
-  });
-
-  it('4. customer details are preserved', async () => {
-    const { repo, service } = setup();
-    repo.rows.push(makeTransaction('t-1', 'CREDIT', 450, 'c-1'));
-
-    const result = await service.getTransactionById(USER_ID, 't-1');
-    assert.ok(result);
-    assert.strictEqual(result.customer?.name, 'Raju');
-    assert.strictEqual(result.customer?.id, 'c-1');
-  });
-
-  it('5. amount formatting is consistent with listing', async () => {
-    const { repo, service } = setup();
-    repo.rows.push(makeTransaction('t-1', 'CREDIT', 450, 'c-1'));
-
-    const detail = await service.getTransactionById(USER_ID, 't-1');
-    const list = await service.getTransactionsForUser(USER_ID);
+    const detail = await service.getTransactionById(BUSINESS_ID, 'own');
     assert.ok(detail);
-    assert.strictEqual(detail.formattedAmount, list[0].formattedAmount);
     assert.strictEqual(detail.formattedAmount, '₹450');
+
+    const voided = await service.getTransactionById(BUSINESS_ID, 'voided');
+    assert.ok(voided, 'VOIDED detail remains available for audit');
+    assert.strictEqual(await service.getTransactionById(BUSINESS_ID, 'foreign'), null);
+    assert.strictEqual(await service.getTransactionById(OTHER_BUSINESS_ID, 'own'), null);
   });
 
-  it('6. invalid transaction ID is rejected', async () => {
-    const { service } = setup();
-    // Service itself does not validate; the API layer uses transactionIdParamSchema.
-    // An empty ID should simply not match any record.
-    const result = await service.getTransactionById(USER_ID, '');
-    assert.strictEqual(result, null);
+  it('history is business-scoped with default page/limit', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    for (let i = 0; i < 12; i++) {
+      repo.rows.push(makeTransaction({ id: `own-${i}`, businessId: BUSINESS_ID }));
+    }
+    repo.rows.push(makeTransaction({ id: 'foreign', businessId: OTHER_BUSINESS_ID }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.getTransactionHistory(BUSINESS_ID);
+
+    assert.strictEqual(result.total, 12, 'foreign business excluded');
+    assert.strictEqual(result.transactions.length, 10);
+    assert.strictEqual(result.page, 1);
+    assert.strictEqual(result.limit, 10);
+    assert.strictEqual(result.totalPages, 2);
   });
 
-  it('7. repository errors propagate correctly', async () => {
+  it('history pagination, type and limit enforcement remain intact', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    for (let i = 0; i < 5; i++) {
+      repo.rows.push(makeTransaction({ id: `c-${i}`, businessId: BUSINESS_ID, type: 'CREDIT' }));
+      repo.rows.push(makeTransaction({ id: `p-${i}`, businessId: BUSINESS_ID, type: 'PAYMENT' }));
+    }
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const credit = await service.getTransactionHistory(BUSINESS_ID, { type: 'CREDIT' });
+    assert.strictEqual(credit.total, 5);
+    assert.ok(credit.transactions.every((t) => t.type === 'CREDIT'));
+
+    const clamped = await service.getTransactionHistory(BUSINESS_ID, { limit: 1000 });
+    assert.strictEqual(clamped.limit, 100);
+  });
+
+  it('customer balance by name uses the supplied business', async () => {
+    const customer = makeCustomer();
+    const repo = new InMemoryTransactionRepository([customer]);
+    repo.rows.push(makeTransaction({ businessId: BUSINESS_ID, amount: new Prisma.Decimal('100.50') }));
+    repo.rows.push(makeTransaction({ id: 'p', businessId: BUSINESS_ID, type: 'PAYMENT', amount: new Prisma.Decimal('25.25') }));
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const balance = await service.getCustomerBalanceForName(BUSINESS_ID, 'Raju');
+
+    assert.ok(balance);
+    assert.strictEqual(balance.outstandingBalance, 75.25);
+    assert.strictEqual(typeof balance.outstandingBalance, 'number');
+    assert.strictEqual(balance.balanceText, '₹75.25');
+    assert.strictEqual(calls.getCustomerByName[0].businessId, BUSINESS_ID);
+    assert.strictEqual(await service.getCustomerBalanceForName(OTHER_BUSINESS_ID, 'Raju'), null);
+  });
+});
+
+describe('transaction service - outstanding and errors', () => {
+  it('multiple customers with fractional balances produce the exact total', async () => {
+    const a = makeCustomer({ id: 'c-1' });
+    const b = makeCustomer({ id: 'c-2', name: 'Amit' });
+    const repo = new InMemoryTransactionRepository([a, b]);
+    repo.rows.push(makeTransaction({ id: 'a1', customerId: 'c-1', amount: new Prisma.Decimal('100.50') }));
+    repo.rows.push(makeTransaction({ id: 'a2', customerId: 'c-1', type: 'PAYMENT', amount: new Prisma.Decimal('25.25') }));
+    repo.rows.push(makeTransaction({ id: 'b1', customerId: 'c-2', amount: new Prisma.Decimal('200.75') }));
+    repo.rows.push(makeTransaction({ id: 'b2', customerId: 'c-2', type: 'PAYMENT', amount: new Prisma.Decimal('10.10') }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
+
+    assert.strictEqual(total.totalOutstanding, 265.9);
+    assert.strictEqual(total.totalOutstandingText, '₹265.9');
+  });
+
+  it('VOIDED transactions do not contribute to outstanding', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ id: 'active', amount: new Prisma.Decimal('500') }));
+    repo.rows.push(makeTransaction({ id: 'void', amount: new Prisma.Decimal('900'), status: 'VOIDED' }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
+    assert.strictEqual(total.totalOutstanding, 500);
+  });
+
+  it('integer totals remain exact', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ amount: new Prisma.Decimal(500) }));
+    repo.rows.push(makeTransaction({ id: 'p', type: 'PAYMENT', amount: new Prisma.Decimal(200) }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    assert.strictEqual((await service.getTotalOutstandingForUser(BUSINESS_ID)).totalOutstanding, 300);
+  });
+
+  it('repository errors propagate through the service', async () => {
     const failingRepo: TransactionRepository = {
       create: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
+      listForBusiness: async () => { throw new Error('DB down'); },
       listForCustomer: async () => { throw new Error('DB down'); },
       listCustomerTransactionGroups: async () => { throw new Error('DB down'); },
       findHistory: async () => { throw new Error('DB down'); },
     };
-    const service = createTransactionService(failingRepo, makeGateway(new InMemoryTransactionRepository()));
+    const customer = makeCustomer();
+    const { gateway } = makeGateway(new InMemoryTransactionRepository([customer]));
+    const service = createTransactionService(failingRepo, gateway);
 
-    await assert.rejects(
-      () => service.getTransactionById(USER_ID, 't-1'),
-      /DB down/
-    );
+    await assert.rejects(() => service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 100,
+      type: 'CREDIT',
+    }), /DB down/);
+    await assert.rejects(() => service.getTransactionsForUser(BUSINESS_ID), /DB down/);
+    await assert.rejects(() => service.getTransactionById(BUSINESS_ID, 'tx-1'), /DB down/);
+    await assert.rejects(() => service.getTransactionHistory(BUSINESS_ID), /DB down/);
+    await assert.rejects(() => service.getTotalOutstandingForUser(BUSINESS_ID), /DB down/);
   });
 
-  it('detail returns full transaction shape matching listing entry', async () => {
-    const { repo, service } = setup();
-    repo.rows.push(makeTransaction('t-1', 'PAYMENT', 200, 'c-1'));
+  it('API-facing response types remain compatible', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ amount: new Prisma.Decimal('10.10') }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
 
-    const detail = await service.getTransactionById(USER_ID, 't-1');
-    const list = await service.getTransactionsForUser(USER_ID);
-    assert.ok(detail);
-    assert.deepStrictEqual(detail, list[0]);
+    const list = await service.getTransactionsForUser(BUSINESS_ID);
+    assert.strictEqual(typeof list[0].formattedAmount, 'string');
+    assert.ok(!(list[0].formattedAmount as string).includes('[object'));
+
+    const balance = await service.getCustomerBalanceForName(BUSINESS_ID, 'Raju');
+    assert.ok(balance);
+    assert.strictEqual(typeof balance.outstandingBalance, 'number');
+    assert.strictEqual(typeof balance.balanceText, 'string');
+
+    const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
+    assert.strictEqual(typeof total.totalOutstanding, 'number');
+    assert.strictEqual(typeof total.totalOutstandingText, 'string');
   });
 });

@@ -1,98 +1,142 @@
 import type { Request, Response } from 'express';
-import { deleteCustomer, ensureCustomer, ensureDefaultUser, getCustomerById, getCustomerTransactions, getCustomersForUser, updateCustomer } from '../services/ledger/customerService.js';
+import {
+  deleteCustomer,
+  ensureCustomer,
+  getCustomerById,
+  getCustomerTransactions,
+  getCustomersForBusiness,
+  updateCustomer,
+} from '../services/ledger/customerService.js';
+import { requireAuth } from '../middleware/authenticate.js';
 
-export async function listCustomersHandler(_req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const customers = await getCustomersForUser(user.id);
-    res.json({ ok: true, data: customers });
-  } catch (error) {
-    res.status(500).json({ ok: false, message: 'Unable to load customers.' });
-  }
-}
+export type CustomerControllerServices = {
+  ensureCustomer: typeof ensureCustomer;
+  getCustomersForBusiness: typeof getCustomersForBusiness;
+  getCustomerById: typeof getCustomerById;
+  getCustomerTransactions: typeof getCustomerTransactions;
+  updateCustomer: typeof updateCustomer;
+  deleteCustomer: typeof deleteCustomer;
+};
 
-export async function getCustomerDetailHandler(req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const customer = await getCustomerById(user.id, customerId);
+const defaultServices: CustomerControllerServices = {
+  ensureCustomer,
+  getCustomersForBusiness,
+  getCustomerById,
+  getCustomerTransactions,
+  updateCustomer,
+  deleteCustomer,
+};
 
-    if (!customer) {
-      return res.status(404).json({ ok: false, message: 'Customer not found.' });
+export function createCustomerController(services: CustomerControllerServices = defaultServices) {
+  async function listCustomersHandler(req: Request, res: Response) {
+    try {
+      const { businessId } = requireAuth(req);
+      const customers = await services.getCustomersForBusiness(businessId);
+      return res.json({ ok: true, data: customers });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to load customers.' });
     }
-
-    return res.json({ ok: true, data: customer });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Unable to load customer details.' });
   }
-}
 
-export async function getCustomerTransactionsHandler(req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const customer = await getCustomerTransactions(user.id, customerId);
+  async function getCustomerDetailHandler(req: Request, res: Response) {
+    try {
+      const { businessId } = requireAuth(req);
+      const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+      const customer = await services.getCustomerById(businessId, customerId);
 
-    if (!customer) {
-      return res.status(404).json({ ok: false, message: 'Customer not found.' });
-    }
-
-    return res.json({ ok: true, data: customer });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Unable to load transactions.' });
-  }
-}
-
-export async function createCustomerHandler(req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const { name, phone } = req.body ?? {};
-
-    if (!name) {
-      return res.status(400).json({ ok: false, message: 'Customer name is required.' });
-    }
-
-    const customer = await ensureCustomer(user.id, String(name), phone ? String(phone) : undefined);
-    return res.status(201).json({ ok: true, data: customer });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Unable to create customer.' });
-  }
-}
-
-export async function updateCustomerHandler(req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const result = await updateCustomer(user.id, customerId, req.body ?? {});
-
-    if (!result.ok) {
-      if (result.code === 'NOT_FOUND') {
-        return res.status(404).json({ ok: false, message: result.message });
+      if (!customer) {
+        return res.status(404).json({ ok: false, message: 'Customer not found.' });
       }
-      return res.status(400).json({ ok: false, message: result.message });
+
+      return res.json({ ok: true, data: customer });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to load customer details.' });
     }
-
-    return res.json({ ok: true, data: result.customer });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Unable to update customer.' });
   }
-}
 
-export async function deleteCustomerHandler(req: Request, res: Response) {
-  try {
-    const user = await ensureDefaultUser();
-    const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
-    const result = await deleteCustomer(user.id, customerId);
+  async function getCustomerTransactionsHandler(req: Request, res: Response) {
+    try {
+      const { businessId } = requireAuth(req);
+      const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+      const customer = await services.getCustomerTransactions(businessId, customerId);
 
-    if (!result.ok) {
-      if (result.code === 'NOT_FOUND') {
-        return res.status(404).json({ ok: false, message: result.message });
+      if (!customer) {
+        return res.status(404).json({ ok: false, message: 'Customer not found.' });
       }
-      return res.status(409).json({ ok: false, message: result.message });
-    }
 
-    return res.json({ ok: true, data: { id: customerId } });
-  } catch (error) {
-    return res.status(500).json({ ok: false, message: 'Unable to delete customer.' });
+      return res.json({ ok: true, data: customer });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to load transactions.' });
+    }
   }
+
+  async function createCustomerHandler(req: Request, res: Response) {
+    try {
+      const { businessId, userId } = requireAuth(req);
+      const { name, phone } = req.body ?? {};
+
+      if (!name) {
+        return res.status(400).json({ ok: false, message: 'Customer name is required.' });
+      }
+
+      const customer = await services.ensureCustomer(
+        businessId,
+        userId,
+        String(name),
+        phone ? String(phone) : undefined
+      );
+      return res.status(201).json({ ok: true, data: customer });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to create customer.' });
+    }
+  }
+
+  async function updateCustomerHandler(req: Request, res: Response) {
+    try {
+      const { businessId } = requireAuth(req);
+      const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+      const result = await services.updateCustomer(businessId, customerId, req.body ?? {});
+
+      if (!result.ok) {
+        if (result.code === 'NOT_FOUND') {
+          return res.status(404).json({ ok: false, message: result.message });
+        }
+        return res.status(400).json({ ok: false, message: result.message });
+      }
+
+      return res.json({ ok: true, data: result.customer });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to update customer.' });
+    }
+  }
+
+  async function deleteCustomerHandler(req: Request, res: Response) {
+    try {
+      const { businessId } = requireAuth(req);
+      const customerId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+      const result = await services.deleteCustomer(businessId, customerId);
+
+      if (!result.ok) {
+        if (result.code === 'NOT_FOUND') {
+          return res.status(404).json({ ok: false, message: result.message });
+        }
+        return res.status(409).json({ ok: false, message: result.message });
+      }
+
+      return res.json({ ok: true, data: { id: customerId } });
+    } catch {
+      return res.status(500).json({ ok: false, message: 'Unable to delete customer.' });
+    }
+  }
+
+  return {
+    listCustomersHandler,
+    getCustomerDetailHandler,
+    getCustomerTransactionsHandler,
+    createCustomerHandler,
+    updateCustomerHandler,
+    deleteCustomerHandler,
+  };
 }
+
+export const customerController = createCustomerController();

@@ -12,14 +12,20 @@ export function errorHandler(
   _next: NextFunction
 ) {
   const statusCode = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal server error';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const hasExplicitStatus =
+    typeof err.statusCode === 'number' || typeof err.status === 'number';
+  const message =
+    !isProduction || hasExplicitStatus
+      ? err.message || 'Internal server error'
+      : 'Internal server error';
 
   const response: Record<string, unknown> = {
     ok: false,
     message,
   };
 
-  if (process.env.NODE_ENV !== 'production' && err.stack) {
+  if (!isProduction && err.stack) {
     response.stack = err.stack;
   }
 

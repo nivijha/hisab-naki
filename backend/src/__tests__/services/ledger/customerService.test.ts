@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { Prisma } from '@prisma/client';
+import type { Customer, Transaction } from '@prisma/client';
 import { createCustomerService } from '../../../services/ledger/customerService.js';
 import type {
   CreateCustomerInput,
@@ -8,27 +10,54 @@ import type {
   DeleteCustomerOutcome,
   UpdateCustomerData,
 } from '../../../repositories/customerRepository.js';
-import type { Customer, Transaction } from '@prisma/client';
 
-function makeCustomer(id: string, userId: string, name: string, phone: string | null = null): Customer {
+const BUSINESS_ID = 'biz-1';
+const OTHER_BUSINESS_ID = 'biz-2';
+const CREATOR_ID = 'user-1';
+const CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
+
+function makeCustomer(overrides: Partial<Customer> = {}): Customer {
   return {
-    id,
-    userId,
-    name,
-    phone,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    id: 'c-1',
+    businessId: BUSINESS_ID,
+    name: 'Raju',
+    phone: null,
+    email: null,
+    notes: null,
+    createdByUserId: CREATOR_ID,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    deletedAt: null,
+    ...overrides,
   };
 }
 
-function makeTransaction(id: string, type: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE', amount: number): Transaction {
+function makeTransaction(
+  id: string,
+  type: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE',
+  amount: number | string,
+  customerId = 'c-1'
+): Transaction {
   return {
     id,
-    userId: 'user-1',
-    customerId: 'c-1',
+    businessId: BUSINESS_ID,
+    customerId,
     type,
-    amount,
+    status: 'ACTIVE',
+    amount: new Prisma.Decimal(amount),
+    saleMode: null,
+    paymentMethod: null,
+    openingDirection: null,
     description: 'test',
-    createdAt: new Date('2026-01-02T00:00:00.000Z'),
+    occurredAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    createdByUserId: CREATOR_ID,
+    voidedAt: null,
+    voidedByUserId: null,
+    voidReason: null,
+    originalTransactionId: null,
+    idempotencyKey: null,
   };
 }
 
@@ -38,19 +67,25 @@ class InMemoryCustomerRepository implements CustomerRepository {
   nextId = 1;
 
   async create(input: CreateCustomerInput): Promise<Customer> {
-    const customer = makeCustomer(`c-${this.nextId++}`, input.userId, input.name, input.phone ?? null);
+    const customer = makeCustomer({
+      id: `c-${this.nextId++}`,
+      businessId: input.businessId,
+      createdByUserId: input.createdByUserId,
+      name: input.name,
+      phone: input.phone ?? null,
+    });
     this.customers.set(customer.id, customer);
     this.transactions.set(customer.id, []);
     return customer;
   }
 
   async update(
-    userId: string,
+    businessId: string,
     customerId: string,
     data: UpdateCustomerData
   ): Promise<Customer | null> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.userId !== userId) return null;
+    if (!customer || customer.businessId !== businessId) return null;
     const updated: Customer = {
       ...customer,
       ...(data.name !== undefined ? { name: data.name } : {}),
@@ -60,9 +95,9 @@ class InMemoryCustomerRepository implements CustomerRepository {
     return updated;
   }
 
-  async delete(userId: string, customerId: string): Promise<DeleteCustomerOutcome> {
+  async delete(businessId: string, customerId: string): Promise<DeleteCustomerOutcome> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.userId !== userId) return { status: 'NOT_FOUND' };
+    if (!customer || customer.businessId !== businessId) return { status: 'NOT_FOUND' };
     if ((this.transactions.get(customerId) ?? []).length > 0) {
       return { status: 'HAS_TRANSACTIONS' };
     }
@@ -71,33 +106,33 @@ class InMemoryCustomerRepository implements CustomerRepository {
     return { status: 'DELETED' };
   }
 
-  async findById(userId: string, customerId: string): Promise<CustomerWithTransactions | null> {
+  async findById(businessId: string, customerId: string): Promise<CustomerWithTransactions | null> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.userId !== userId) return null;
+    if (!customer || customer.businessId !== businessId) return null;
     return { ...customer, transactions: this.transactions.get(customerId) ?? [] };
   }
 
-  async findByName(userId: string, customerName: string): Promise<CustomerWithTransactions | null> {
-    const found = this.findByCaseInsensitiveName(userId, customerName);
+  async findByName(businessId: string, customerName: string): Promise<CustomerWithTransactions | null> {
+    const found = this.findByCaseInsensitiveName(businessId, customerName);
     if (!found) return null;
     return { ...found, transactions: this.transactions.get(found.id) ?? [] };
   }
 
-  async findByNameForDuplicateCheck(userId: string, customerName: string): Promise<Customer | null> {
-    return this.findByCaseInsensitiveName(userId, customerName);
+  async findByNameForDuplicateCheck(businessId: string, customerName: string): Promise<Customer | null> {
+    return this.findByCaseInsensitiveName(businessId, customerName);
   }
 
-  async listForUser(userId: string): Promise<CustomerWithTransactions[]> {
+  async listForBusiness(businessId: string): Promise<CustomerWithTransactions[]> {
     return [...this.customers.values()]
-      .filter((c) => c.userId === userId)
+      .filter((c) => c.businessId === businessId)
       .reverse()
       .map((c) => ({ ...c, transactions: this.transactions.get(c.id) ?? [] }));
   }
 
-  private findByCaseInsensitiveName(userId: string, name: string): Customer | null {
+  private findByCaseInsensitiveName(businessId: string, name: string): Customer | null {
     const lower = name.toLowerCase();
     for (const customer of this.customers.values()) {
-      if (customer.userId === userId && customer.name.toLowerCase() === lower) {
+      if (customer.businessId === businessId && customer.name.toLowerCase() === lower) {
         return customer;
       }
     }
@@ -105,15 +140,16 @@ class InMemoryCustomerRepository implements CustomerRepository {
   }
 }
 
-describe('customer service (repository boundary)', () => {
-  it('successful customer creation', async () => {
+describe('customer service - business-scoped creation', () => {
+  it('successful customer creation passes businessId and createdByUserId', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const customer = await service.ensureCustomer('user-1', 'Raju Sharma');
+    const customer = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju Sharma');
 
     assert.strictEqual(customer.name, 'Raju Sharma');
-    assert.strictEqual(customer.userId, 'user-1');
+    assert.strictEqual(customer.businessId, BUSINESS_ID);
+    assert.strictEqual(customer.createdByUserId, CREATOR_ID);
     assert.strictEqual(customer.phone, null);
     assert.strictEqual(repo.customers.size, 1);
   });
@@ -122,7 +158,7 @@ describe('customer service (repository boundary)', () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const customer = await service.ensureCustomer('user-1', '  Raju  ');
+    const customer = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, '  Raju  ');
     assert.strictEqual(customer.name, 'Raju');
   });
 
@@ -131,7 +167,7 @@ describe('customer service (repository boundary)', () => {
     const service = createCustomerService(repo);
 
     await assert.rejects(
-      () => service.ensureCustomer('user-1', '   '),
+      () => service.ensureCustomer(BUSINESS_ID, CREATOR_ID, '   '),
       /Customer name is required/
     );
     assert.strictEqual(repo.customers.size, 0);
@@ -141,35 +177,37 @@ describe('customer service (repository boundary)', () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const first = await service.ensureCustomer('user-1', 'Raju', '123');
-    const duplicate = await service.ensureCustomer('user-1', 'RAJU', '999');
+    const first = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '123');
+    const duplicate = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'RAJU', '999');
 
     assert.strictEqual(duplicate.id, first.id);
     assert.strictEqual(duplicate.name, first.name);
-    assert.strictEqual(repo.customers.size, 1, 'no second customer created');
+    assert.strictEqual(repo.customers.size, 1);
   });
 
-  it('duplicate check is scoped to the user', async () => {
+  it('duplicate check is scoped to the business', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    await service.ensureCustomer('user-1', 'Raju');
-    const otherUserCustomer = await service.ensureCustomer('user-2', 'Raju');
+    await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    const otherBusinessCustomer = await service.ensureCustomer(OTHER_BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    assert.notStrictEqual(otherUserCustomer.userId, 'user-1');
+    assert.notStrictEqual(otherBusinessCustomer.businessId, BUSINESS_ID);
     assert.strictEqual(repo.customers.size, 2);
   });
+});
 
-  it('customer lookup by ID returns customer with outstanding balance', async () => {
+describe('customer service - business-scoped reads', () => {
+  it('lookup by ID uses the supplied business and returns outstanding balance', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
     repo.transactions.set(created.id, [
       makeTransaction('t-1', 'CREDIT', 500),
       makeTransaction('t-2', 'PAYMENT', 200),
     ]);
 
-    const customer = await service.getCustomerById('user-1', created.id);
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
 
     assert.ok(customer);
     assert.strictEqual(customer.name, 'Raju');
@@ -177,65 +215,71 @@ describe('customer service (repository boundary)', () => {
     assert.strictEqual(customer.transactions.length, 2);
   });
 
-  it('customer not found returns null (by id)', async () => {
+  it('lookup by ID with a different business returns null', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    const customer = await service.getCustomerById('user-1', 'missing');
-    assert.strictEqual(customer, null);
+    assert.strictEqual(
+      await service.getCustomerById(OTHER_BUSINESS_ID, created.id),
+      null,
+      'cross-business lookup must be not found'
+    );
   });
 
-  it('customer not found returns null (by name)', async () => {
+  it('customer not found returns null (by id and by name)', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const customer = await service.getCustomerByName('user-1', 'Unknown');
-    assert.strictEqual(customer, null);
+    assert.strictEqual(await service.getCustomerById(BUSINESS_ID, 'missing'), null);
+    assert.strictEqual(await service.getCustomerByName(BUSINESS_ID, 'Unknown'), null);
   });
 
-  it('customer lookup by name is case-insensitive', async () => {
+  it('lookup by name is case-insensitive within the business', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju Sharma');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju Sharma');
 
-    const customer = await service.getCustomerByName('user-1', 'raju sharma');
+    const customer = await service.getCustomerByName(BUSINESS_ID, 'raju sharma');
     assert.ok(customer);
     assert.strictEqual(customer.id, created.id);
+    assert.strictEqual(await service.getCustomerByName(OTHER_BUSINESS_ID, 'Raju Sharma'), null);
   });
 
-  it('customer listing includes summary fields', async () => {
+  it('listing is scoped to the supplied business', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const a = await service.ensureCustomer('user-1', 'Amit');
-    await service.ensureCustomer('user-1', 'Neha');
-    await service.ensureCustomer('user-2', 'Other User Customer');
+    const a = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Amit');
+    await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Neha');
+    await service.ensureCustomer(OTHER_BUSINESS_ID, CREATOR_ID, 'Other Business Customer');
     repo.transactions.set(a.id, [
       makeTransaction('t-1', 'CREDIT', 400),
       makeTransaction('t-2', 'PAYMENT', 100),
     ]);
 
-    const customers = await service.getCustomersForUser('user-1');
+    const customers = await service.getCustomersForBusiness(BUSINESS_ID);
 
-    assert.strictEqual(customers.length, 2, 'only user-1 customers listed');
+    assert.strictEqual(customers.length, 2, 'only current-business customers listed');
     const amit = customers.find((c) => c.name === 'Amit');
     assert.ok(amit);
     assert.strictEqual(amit.outstandingBalance, 300);
     assert.strictEqual(amit.transactionCount, 2);
     assert.ok('createdAt' in amit);
     assert.ok('phone' in amit);
+    assert.strictEqual((await service.getCustomersForBusiness(OTHER_BUSINESS_ID)).length, 1);
   });
 
-  it('getCustomerTransactions returns the same shape as getCustomerById', async () => {
+  it('getCustomerTransactions uses the supplied business', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
     repo.transactions.set(created.id, [makeTransaction('t-1', 'CREDIT', 700)]);
 
-    const customer = await service.getCustomerTransactions('user-1', created.id);
-
+    const customer = await service.getCustomerTransactions(BUSINESS_ID, created.id);
     assert.ok(customer);
     assert.strictEqual(customer.outstandingBalance, 700);
     assert.strictEqual(customer.transactions.length, 1);
+    assert.strictEqual(await service.getCustomerTransactions(OTHER_BUSINESS_ID, created.id), null);
   });
 
   it('repository errors propagate through the service', async () => {
@@ -246,25 +290,25 @@ describe('customer service (repository boundary)', () => {
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
+      listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);
 
-    await assert.rejects(() => service.ensureCustomer('user-1', 'Raju'), /DB down/);
-    await assert.rejects(() => service.getCustomerById('user-1', 'c-1'), /DB down/);
-    await assert.rejects(() => service.getCustomersForUser('user-1'), /DB down/);
-    await assert.rejects(() => service.getCustomerByName('user-1', 'Raju'), /DB down/);
-    await assert.rejects(() => service.getCustomerTransactions('user-1', 'c-1'), /DB down/);
+    await assert.rejects(() => service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju'), /DB down/);
+    await assert.rejects(() => service.getCustomerById(BUSINESS_ID, 'c-1'), /DB down/);
+    await assert.rejects(() => service.getCustomersForBusiness(BUSINESS_ID), /DB down/);
+    await assert.rejects(() => service.getCustomerByName(BUSINESS_ID, 'Raju'), /DB down/);
+    await assert.rejects(() => service.getCustomerTransactions(BUSINESS_ID, 'c-1'), /DB down/);
   });
 });
 
-describe('customer service - updateCustomer', () => {
+describe('customer service - business-scoped updateCustomer', () => {
   it('1. successful update', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju', '111');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '111');
 
-    const result = await service.updateCustomer('user-1', created.id, {
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, {
       name: 'Raju Sharma',
       phone: '999',
     });
@@ -280,9 +324,9 @@ describe('customer service - updateCustomer', () => {
   it('2. name trimming', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    const result = await service.updateCustomer('user-1', created.id, { name: '  Amit  ' });
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, { name: '  Amit  ' });
     assert.strictEqual(result.ok, true);
     if (result.ok) assert.strictEqual(result.customer.name, 'Amit');
   });
@@ -290,39 +334,36 @@ describe('customer service - updateCustomer', () => {
   it('3. empty name rejection', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
     await assert.rejects(
-      () => service.updateCustomer('user-1', created.id, { name: '   ' }),
+      () => service.updateCustomer(BUSINESS_ID, created.id, { name: '   ' }),
       /Customer name is required/
     );
-    const current = await service.getCustomerById('user-1', created.id);
-    assert.strictEqual(current?.name, 'Raju', 'name must be unchanged');
+    const current = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.strictEqual(current?.name, 'Raju');
   });
 
   it('4. duplicate name rejection (excludes current customer)', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const raju = await service.ensureCustomer('user-1', 'Raju');
-    await service.ensureCustomer('user-1', 'Amit');
+    const raju = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Amit');
 
-    const result = await service.updateCustomer('user-1', raju.id, { name: 'amit' });
+    const result = await service.updateCustomer(BUSINESS_ID, raju.id, { name: 'amit' });
     assert.strictEqual(result.ok, false);
-    if (!result.ok) {
-      assert.strictEqual(result.code, 'NAME_CONFLICT');
-    }
+    if (!result.ok) assert.strictEqual(result.code, 'NAME_CONFLICT');
 
-    // Updating to the same name (case-insensitive) is allowed
-    const sameName = await service.updateCustomer('user-1', raju.id, { name: 'RAJU' });
+    const sameName = await service.updateCustomer(BUSINESS_ID, raju.id, { name: 'RAJU' });
     assert.strictEqual(sameName.ok, true);
   });
 
   it('5. updating a customer without changing its name (phone only)', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju', '111');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '111');
 
-    const result = await service.updateCustomer('user-1', created.id, { phone: '222' });
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, { phone: '222' });
     assert.strictEqual(result.ok, true);
     if (result.ok) {
       assert.strictEqual(result.customer.phone, '222');
@@ -333,24 +374,24 @@ describe('customer service - updateCustomer', () => {
   it('6. partial update preserves omitted fields', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju', '111');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '111');
     repo.transactions.set(created.id, [makeTransaction('t-1', 'CREDIT', 500)]);
 
-    const result = await service.updateCustomer('user-1', created.id, { name: 'Amit' });
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, { name: 'Amit' });
     assert.strictEqual(result.ok, true);
     if (result.ok) {
       assert.strictEqual(result.customer.name, 'Amit');
       assert.strictEqual(result.customer.phone, '111', 'omitted phone preserved');
     }
-    const detail = await service.getCustomerById('user-1', created.id);
-    assert.strictEqual(detail?.transactions.length, 1, 'transactions untouched');
+    const detail = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.strictEqual(detail?.transactions.length, 1);
   });
 
   it('7. updating a nonexistent customer', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const result = await service.updateCustomer('user-1', 'missing', { name: 'Amit' });
+    const result = await service.updateCustomer(BUSINESS_ID, 'missing', { name: 'Amit' });
     assert.strictEqual(result.ok, false);
     if (!result.ok) {
       assert.strictEqual(result.code, 'NOT_FOUND');
@@ -358,17 +399,17 @@ describe('customer service - updateCustomer', () => {
     }
   });
 
-  it('8. customer belonging to another user cannot be updated', async () => {
+  it('8. customer belonging to another business cannot be updated', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    const result = await service.updateCustomer('user-2', created.id, { name: 'Hacked' });
+    const result = await service.updateCustomer(OTHER_BUSINESS_ID, created.id, { name: 'Hacked' });
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'NOT_FOUND');
 
-    const current = await service.getCustomerById('user-1', created.id);
-    assert.strictEqual(current?.name, 'Raju', 'original customer unchanged');
+    const current = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.strictEqual(current?.name, 'Raju');
   });
 
   it('9. repository errors propagate correctly', async () => {
@@ -379,12 +420,12 @@ describe('customer service - updateCustomer', () => {
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
+      listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);
 
     await assert.rejects(
-      () => service.updateCustomer('user-1', 'c-1', { name: 'Amit' }),
+      () => service.updateCustomer(BUSINESS_ID, 'c-1', { name: 'Amit' }),
       /DB down/
     );
   });
@@ -392,62 +433,118 @@ describe('customer service - updateCustomer', () => {
   it('10. empty update request is rejected', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
     await assert.rejects(
-      () => service.updateCustomer('user-1', created.id, {}),
+      () => service.updateCustomer(BUSINESS_ID, created.id, {}),
       /At least one field is required/
     );
-    const current = await service.getCustomerById('user-1', created.id);
-    assert.strictEqual(current?.name, 'Raju');
   });
 
   it('empty phone clears the phone value', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju', '111');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '111');
 
-    const result = await service.updateCustomer('user-1', created.id, { phone: '   ' });
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, { phone: '   ' });
     assert.strictEqual(result.ok, true);
     if (result.ok) assert.strictEqual(result.customer.phone, null);
   });
 });
 
-describe('customer service - deleteCustomer', () => {
+describe('customer service - outstanding balances', () => {
+  it('fractional outstanding balance is preserved exactly', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'CREDIT', '100.50'),
+      makeTransaction('t2', 'PAYMENT', '25.25'),
+    ]);
+
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.ok(customer);
+    assert.strictEqual(customer.outstandingBalance, 75.25);
+  });
+
+  it('integer-based behavior remains correct', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'CREDIT', 450),
+      makeTransaction('t2', 'PAYMENT', 200),
+      makeTransaction('t3', 'SALE', 1000),
+      makeTransaction('t4', 'EXPENSE', 500),
+    ]);
+
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.ok(customer);
+    assert.strictEqual(customer.outstandingBalance, 250);
+  });
+
+  it('response contract keeps outstandingBalance a number', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const a = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Amit');
+    repo.transactions.set(a.id, [makeTransaction('t1', 'CREDIT', '10.10')]);
+
+    const listed = await service.getCustomersForBusiness(BUSINESS_ID);
+    assert.strictEqual(typeof listed[0].outstandingBalance, 'number');
+    assert.strictEqual(listed[0].outstandingBalance, 10.1);
+  });
+
+  it('overpayment produces a negative number', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'CREDIT', 100),
+      makeTransaction('t2', 'PAYMENT', 300),
+    ]);
+
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.ok(customer);
+    assert.strictEqual(typeof customer.outstandingBalance, 'number');
+    assert.strictEqual(customer.outstandingBalance, -200);
+  });
+});
+
+describe('customer service - business-scoped deleteCustomer', () => {
   it('1. successful deletion without transactions', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    const result = await service.deleteCustomer('user-1', created.id);
+    const result = await service.deleteCustomer(BUSINESS_ID, created.id);
 
     assert.strictEqual(result.ok, true);
     assert.strictEqual(repo.customers.has(created.id), false);
-    assert.strictEqual(await service.getCustomerById('user-1', created.id), null);
+    assert.strictEqual(await service.getCustomerById(BUSINESS_ID, created.id), null);
   });
 
   it('2. deletion blocked when transactions exist', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
     repo.transactions.set(created.id, [makeTransaction('t-1', 'CREDIT', 500)]);
 
-    const result = await service.deleteCustomer('user-1', created.id);
+    const result = await service.deleteCustomer(BUSINESS_ID, created.id);
 
     assert.strictEqual(result.ok, false);
     if (!result.ok) {
       assert.strictEqual(result.code, 'HAS_TRANSACTIONS');
       assert.match(result.message, /transaction history/);
     }
-    assert.strictEqual(repo.customers.has(created.id), true, 'customer must still exist');
-    assert.strictEqual(repo.transactions.get(created.id)?.length, 1, 'transaction must be preserved');
+    assert.strictEqual(repo.customers.has(created.id), true);
+    assert.strictEqual(repo.transactions.get(created.id)?.length, 1);
   });
 
   it('3. customer not found', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const result = await service.deleteCustomer('user-1', 'missing');
+    const result = await service.deleteCustomer(BUSINESS_ID, 'missing');
 
     assert.strictEqual(result.ok, false);
     if (!result.ok) {
@@ -456,16 +553,16 @@ describe('customer service - deleteCustomer', () => {
     }
   });
 
-  it('4. customer belonging to another user cannot be deleted', async () => {
+  it('4. customer belonging to another business cannot be deleted', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
-    const created = await service.ensureCustomer('user-1', 'Raju');
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
 
-    const result = await service.deleteCustomer('user-2', created.id);
+    const result = await service.deleteCustomer(OTHER_BUSINESS_ID, created.id);
 
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'NOT_FOUND');
-    assert.strictEqual(repo.customers.has(created.id), true, 'other user customer untouched');
+    assert.strictEqual(repo.customers.has(created.id), true);
   });
 
   it('5. repository errors propagate correctly', async () => {
@@ -476,31 +573,27 @@ describe('customer service - deleteCustomer', () => {
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
-      listForUser: async () => { throw new Error('DB down'); },
+      listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);
 
-    await assert.rejects(
-      () => service.deleteCustomer('user-1', 'c-1'),
-      /DB down/
-    );
+    await assert.rejects(() => service.deleteCustomer(BUSINESS_ID, 'c-1'), /DB down/);
   });
 
   it('6. existing customer operations continue working', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
-    const created = await service.ensureCustomer('user-1', 'Raju', '111');
-    const listed = await service.getCustomersForUser('user-1');
-    assert.strictEqual(listed.length, 1);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju', '111');
+    assert.strictEqual((await service.getCustomersForBusiness(BUSINESS_ID)).length, 1);
 
-    const renamed = await service.updateCustomer('user-1', created.id, { name: 'Raju Sharma' });
+    const renamed = await service.updateCustomer(BUSINESS_ID, created.id, { name: 'Raju Sharma' });
     assert.strictEqual(renamed.ok, true);
 
-    const removed = await service.deleteCustomer('user-1', created.id);
+    const removed = await service.deleteCustomer(BUSINESS_ID, created.id);
     assert.strictEqual(removed.ok, true);
 
-    assert.strictEqual((await service.getCustomersForUser('user-1')).length, 0);
-    assert.strictEqual(await service.getCustomerByName('user-1', 'Raju Sharma'), null);
+    assert.strictEqual((await service.getCustomersForBusiness(BUSINESS_ID)).length, 0);
+    assert.strictEqual(await service.getCustomerByName(BUSINESS_ID, 'Raju Sharma'), null);
   });
 });

@@ -1,27 +1,44 @@
+import { Prisma } from '@prisma/client';
 import type { Transaction } from '@prisma/client';
 
-export function calculateOutstandingAmount(transactions: Pick<Transaction, 'type' | 'amount'>[]) {
-  return transactions.reduce((total, transaction) => {
+type OutstandingTransaction = {
+  type: Transaction['type'];
+  amount: Transaction['amount'] | number;
+};
+
+export function calculateOutstandingAmount(
+  transactions: OutstandingTransaction[]
+): Prisma.Decimal {
+  return transactions.reduce<Prisma.Decimal>((total, transaction) => {
+    const amount =
+      typeof transaction.amount === 'number'
+        ? new Prisma.Decimal(transaction.amount)
+        : transaction.amount;
+
     if (transaction.type === 'CREDIT') {
-      return total + transaction.amount;
+      return total.plus(amount);
     }
 
     if (transaction.type === 'PAYMENT') {
-      return total - transaction.amount;
+      return total.minus(amount);
     }
 
     return total;
-  }, 0);
+  }, new Prisma.Decimal(0));
 }
 
-export function formatCurrency(amount: number) {
+export function toDisplayNumber(amount: Prisma.Decimal | number): number {
+  return typeof amount === 'number' ? amount : amount.toNumber();
+}
+
+export function formatCurrency(amount: Prisma.Decimal | number) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(toDisplayNumber(amount));
 }
 
-export function toCurrencyText(amount: number) {
-  return `₹${amount.toLocaleString('en-IN')}`;
+export function toCurrencyText(amount: Prisma.Decimal | number) {
+  return `₹${toDisplayNumber(amount).toLocaleString('en-IN')}`;
 }

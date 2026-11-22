@@ -1,7 +1,8 @@
+import { Prisma } from '@prisma/client';
 import type { TransactionWithCustomer, TransactionRepository } from '../../repositories/transactionRepository.js';
 import { PrismaTransactionRepository } from '../../repositories/transactionRepository.js';
-import { calculateOutstandingAmount } from '../../utils/ledger.js';
-import { ensureDefaultUser } from '../ledger/customerService.js';
+import { calculateOutstandingAmount, toDisplayNumber } from '../../utils/ledger.js';
+import { createPrismaBusinessNameResolver } from './businessService.js';
 
 const DEFAULT_FALLBACK_BUSINESS_NAME = 'My Business';
 
@@ -17,7 +18,7 @@ export type DashboardSummary = {
 
 export type DashboardServiceDependencies = {
   repository: TransactionRepository;
-  getBusinessName?: (userId: string) => Promise<string | null | undefined>;
+  getBusinessName?: (businessId: string) => Promise<string | null | undefined>;
   now?: () => Date;
   fallbackBusinessName?: string;
 };
@@ -27,25 +28,20 @@ function resolveFallbackName(): string {
   return configured && configured.trim() ? configured : DEFAULT_FALLBACK_BUSINESS_NAME;
 }
 
-async function defaultGetBusinessName(userId: string): Promise<string | null | undefined> {
-  const user = await ensureDefaultUser();
-  return user?.id === userId ? user.businessName : undefined;
-}
-
 export function createDashboardService(dependencies: DashboardServiceDependencies) {
   const {
     repository,
-    getBusinessName = defaultGetBusinessName,
+    getBusinessName = async () => undefined,
     now = () => new Date(),
     fallbackBusinessName = resolveFallbackName(),
   } = dependencies;
 
-  async function getDashboardSummary(userId: string): Promise<DashboardSummary> {
+  async function getDashboardSummary(businessId: string): Promise<DashboardSummary> {
     const current = now();
     const startOfToday = new Date(current.getFullYear(), current.getMonth(), current.getDate());
 
-    const transactions = await repository.listForUser(userId);
-    const customerGroups = await repository.listCustomerTransactionGroups(userId);
+    const transactions = await repository.listForBusiness(businessId);
+    const customerGroups = await repository.listCustomerTransactionGroups(businessId);
 
     const todayTransactions = transactions.filter(
       (transaction) => transaction.createdAt >= startOfToday
@@ -54,24 +50,27 @@ export function createDashboardService(dependencies: DashboardServiceDependencie
     const sumByType = (type: 'SALE' | 'EXPENSE' | 'PAYMENT' | 'CREDIT') =>
       todayTransactions
         .filter((transaction) => transaction.type === type)
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
+        .reduce(
+          (sum, transaction) => sum.plus(transaction.amount),
+          new Prisma.Decimal(0)
+        );
 
     const totalOutstanding = customerGroups.reduce(
-      (sum, customer) => sum + calculateOutstandingAmount(customer.transactions),
-      0
+      (sum, customer) => sum.plus(calculateOutstandingAmount(customer.transactions)),
+      new Prisma.Decimal(0)
     );
 
-    const rawBusinessName = await getBusinessName(userId);
+    const rawBusinessName = await getBusinessName(businessId);
     const businessName =
       rawBusinessName && rawBusinessName.trim() ? rawBusinessName : fallbackBusinessName;
 
     return {
       businessName,
-      todaysSales: sumByType('SALE'),
-      todaysExpenses: sumByType('EXPENSE'),
-      paymentsReceived: sumByType('PAYMENT'),
-      newCredit: sumByType('CREDIT'),
-      totalOutstanding,
+      todaysSales: toDisplayNumber(sumByType('SALE')),
+      todaysExpenses: toDisplayNumber(sumByType('EXPENSE')),
+      paymentsReceived: toDisplayNumber(sumByType('PAYMENT')),
+      newCredit: toDisplayNumber(sumByType('CREDIT')),
+      totalOutstanding: toDisplayNumber(totalOutstanding),
       recentTransactions: transactions.slice(0, 5),
     };
   }
@@ -79,8 +78,11 @@ export function createDashboardService(dependencies: DashboardServiceDependencie
   return { getDashboardSummary };
 }
 
-const defaultService = createDashboardService({ repository: new PrismaTransactionRepository() });
+const defaultService = createDashboardService({
+  repository: new PrismaTransactionRepository(),
+  getBusinessName: createPrismaBusinessNameResolver(),
+});
 
-export async function getDashboardSummary(userId: string): Promise<DashboardSummary> {
-  return defaultService.getDashboardSummary(userId);
+export async function getDashboardSummary(businessId: string): Promise<DashboardSummary> {
+  return defaultService.getDashboardSummary(businessId);
 }
