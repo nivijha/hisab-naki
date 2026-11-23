@@ -9,7 +9,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <header className="border-b border-forest/10 bg-forest sticky top-0 z-40">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
-            <Link href="/" className="flex min-h-11 items-center gap-2 lg:min-h-0">
+            <Link href="/" className="flex min-h-11 items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-md bg-purple">
                 <Mic className="h-5 w-5 text-forest" />
               </div>

@@ -44,7 +44,7 @@ export function Hero() {
                   <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted">NAMASTE STORES</p>
                   <p className="mt-1 text-sm font-medium">Today, 18 November</p>
                 </div>
-                <Link href="/dashboard" className="motion-interactive inline-flex min-h-11 items-center gap-2 rounded-sm border border-forest/20 px-3 text-xs font-semibold text-forest hover:bg-purple hover:text-forest-dark lg:min-h-10">
+                <Link href="/dashboard" className="motion-interactive inline-flex min-h-11 items-center gap-2 rounded-sm border border-forest/20 px-3 text-xs font-semibold text-forest hover:bg-purple hover:text-forest-dark">
                   View ledger <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5" />
                 </Link>
               </div>

@@ -243,7 +243,7 @@ function TransactionRows({ transactions, customerLedger = false, onViewDetails }
   return (
     <ul className="space-y-3" role="list">
       {transactions.map(transaction => (
-        <li key={transaction.id} className="flex items-center justify-between gap-2 rounded-lg border border-forest/10 p-3">
+        <li key={transaction.id} className="flex flex-col items-stretch justify-between gap-2 rounded-lg border border-forest/10 p-3 sm:flex-row sm:items-center">
           <div className="min-w-0 break-words">
             {customerLedger ? (
               <p className="text-sm font-semibold text-forest">{transaction.description || 'Transaction'}</p>
@@ -255,8 +255,8 @@ function TransactionRows({ transactions, customerLedger = false, onViewDetails }
               {formatDate(transaction.createdAt)}
             </p>
           </div>
-          <div className="max-w-[50%] shrink-0 text-right [overflow-wrap:anywhere]">
-            <p className="text-sm font-bold text-forest">{formatCurrency(transaction.amount)}</p>
+          <div className="max-w-full shrink-0 text-left sm:max-w-[50%] sm:text-right">
+            <p className="whitespace-nowrap text-xs font-bold text-forest sm:text-sm">{formatCurrency(transaction.amount)}</p>
             <p className={`mt-0.5 inline-block max-w-full rounded-full px-2 text-xs font-medium ${
               transaction.type === 'PAYMENT' ? 'bg-purple/10 text-forest' : transaction.type === 'CREDIT' ? 'bg-beige text-forest' : 'text-muted'
             }`}>
@@ -284,7 +284,7 @@ function TransactionDetails({ id, onClose }: { id: string; onClose: () => void }
       ) : detail ? (
         <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
           <dt className="font-medium text-muted">Type</dt><dd className="font-semibold text-forest">{detail.type === 'PAYMENT' ? 'Repayment' : detail.type === 'CREDIT' ? 'Credit' : detail.type}</dd>
-          <dt className="font-medium text-muted">Amount</dt><dd className="font-semibold text-forest [overflow-wrap:anywhere]">{formatCurrency(detail.amount)}</dd>
+          <dt className="font-medium text-muted">Amount</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">{formatCurrency(detail.amount)}</dd>
           <dt className="font-medium text-muted">Customer</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.customer?.name || 'No customer linked'}</dd>
           <dt className="font-medium text-muted">Date</dt><dd className="text-forest">{formatDate(detail.createdAt)}</dd>
           <dt className="font-medium text-muted">Description</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.description || 'No description provided'}</dd>
@@ -373,7 +373,8 @@ function CustomerLedgerDetails({ customerId, onClose }: { customerId: string; on
             <p className="text-lg font-semibold text-forest">{ledger.name}</p>
             {ledger.phone && <p className="text-sm text-muted">{ledger.phone}</p>}
             <p className="text-xs text-muted">Customer ID {ledger.id}</p>
-            <p className="text-sm text-muted">Outstanding balance <strong className="text-forest">{formatCurrency(ledger.outstandingBalance)}</strong></p>
+            <p className="text-sm text-muted">Outstanding balance</p>
+            <strong className="block whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] text-forest">{formatCurrency(ledger.outstandingBalance)}</strong>
           </div>
           {ledger.transactions.length > 0 ? (
             <>
@@ -1015,7 +1016,7 @@ export default function DashboardPage() {
         </div>
         <div className="mt-3 rounded-lg border border-purple/20 bg-purple/5 p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-3" aria-hidden={voicePhase !== 'listening'}>
-            <VoiceWaveform animate={voicePhase === 'listening'} className="h-8 w-20" />
+            <VoiceWaveform animate={voicePhase === 'listening'} className="h-8 w-32 shrink-0" />
             <p className="text-xs text-muted">{voicePhase === 'listening' ? 'Listening now' : 'Voice status'}</p>
           </div>
           <p id="voice-feedback" role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-sm text-forest">
@@ -1035,7 +1036,7 @@ export default function DashboardPage() {
               <dt className="font-medium text-muted">Parser status</dt><dd className="text-forest">{voicePreview.readyForConfirmation ? 'Backend marked complete (not independently verified)' : 'Backend marked incomplete'}</dd>
               {voicePreview.type && <><dt className="font-medium text-muted">Transaction type</dt><dd className="text-forest">{voicePreview.type}</dd></>}
               {voicePreview.customerName && <><dt className="font-medium text-muted">Customer name from parser</dt><dd className="break-words text-forest">{voicePreview.customerName}</dd></>}
-              {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="break-words font-semibold text-forest">₹{String(voicePreview.amount)}</dd></>}
+              {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">₹{String(voicePreview.amount)}</dd></>}
               {voicePreview.description && <><dt className="font-medium text-muted">Description</dt><dd className="break-words text-forest">{voicePreview.description}</dd></>}
               <dt className="font-medium text-muted">Preview ID</dt><dd className="break-all font-mono text-xs text-forest">{voicePreview.id}</dd>
               <dt className="font-medium text-muted">Prepared</dt><dd className="text-forest">{formatDate(voicePreview.createdAt)}</dd>
@@ -1059,7 +1060,10 @@ export default function DashboardPage() {
           </div>
         )}
         <ScrollReveal className="grid gap-4 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-          {statCards.map((card) => (
+          {statCards.map((card) => {
+            const amount = summary ? formatCurrency(summary[card.key]) : '—';
+            const compactAmount = amount.length > 12;
+            return (
             <Card key={card.key}>
               <CardHeader className="items-center justify-between space-y-0 px-2 pb-2 text-center sm:px-4">
                 <h3 className={`flex min-h-10 items-center text-sm font-medium tracking-tight ${card.key === 'totalOutstanding' ? 'text-forest' : 'text-muted'}`}>
@@ -1073,13 +1077,14 @@ export default function DashboardPage() {
                     <span className="h-4 w-16 max-w-[80%] rounded-full bg-forest/10" />
                   </div>
                 ) : (
-                  <p className="text-2xl font-bold leading-8 text-forest [overflow-wrap:anywhere] min-[375px]:max-sm:text-[clamp(1rem,4vw,1.25rem)]">
-                    {summary ? formatCurrency(summary[card.key]) : '—'}
+                  <p className={`whitespace-nowrap font-bold leading-8 text-forest ${compactAmount ? 'text-[clamp(0.75rem,1.5vw,1.125rem)]' : 'text-2xl min-[375px]:max-sm:text-[clamp(1rem,4vw,1.25rem)]'}`}>
+                    {amount}
                   </p>
                 )}
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </ScrollReveal>
         {summaryState.status === 'loading' && (
           <p role="status" className={summary ? 'mt-2 text-center text-sm text-muted' : 'sr-only'}>
@@ -1216,7 +1221,7 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-1">
-                          <span className="min-w-0 text-lg font-bold text-forest [overflow-wrap:anywhere]">{formatCurrency(customer.outstandingBalance)}</span>
+                          <span className={`min-w-0 whitespace-nowrap font-bold text-forest ${formatCurrency(customer.outstandingBalance).length > 12 ? 'text-[clamp(0.75rem,3.5vw,1.125rem)]' : 'text-lg'}`}>{formatCurrency(customer.outstandingBalance)}</span>
                           <span className="text-xs text-muted">outstanding</span>
                         </div>
                           <Button
@@ -1337,7 +1342,7 @@ export default function DashboardPage() {
                       <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
                         <dt className="font-medium text-muted">Type</dt><dd className="text-forest">{manualType}</dd>
                         {manualCustomer && <><dt className="font-medium text-muted">Customer</dt><dd className="break-words text-forest">{manualCustomer.name} · {manualCustomer.id}</dd></>}
-                        <dt className="font-medium text-muted">Amount</dt><dd className="font-semibold text-forest">{formatCurrency(manualAmount)}</dd>
+                        <dt className="font-medium text-muted">Amount</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">{formatCurrency(manualAmount)}</dd>
                         <dt className="font-medium text-muted">Description</dt><dd className="break-words text-forest">{manualDescription.trim() || 'No description'}</dd>
                       </dl>
                       <p role="status" className="rounded-md border border-forest/15 bg-white p-3 text-sm text-forest">Review only — nothing has been sent or recorded. The available preview API accepts a transcript, not these structured fields, so manual submission is unavailable.</p>

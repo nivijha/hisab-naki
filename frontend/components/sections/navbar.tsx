@@ -77,7 +77,7 @@ export function Navbar() {
     <nav aria-label="Main navigation" onKeyDown={handleNavigationKeyDown} className="fixed inset-x-0 top-0 z-50 border-b border-beige/15 bg-forest">
       <div className="site-container">
         <div className="flex h-[72px] items-center justify-between">
-          <Link href="/" className="flex min-h-11 items-center gap-3 text-beige lg:min-h-0" aria-label="HisabNaki home">
+          <Link href="/" className="flex min-h-11 items-center gap-3 text-beige" aria-label="HisabNaki home">
             <span className="mic-motion flex h-9 w-9 items-center justify-center bg-purple text-forest-dark">
               <Mic aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={2} />
             </span>

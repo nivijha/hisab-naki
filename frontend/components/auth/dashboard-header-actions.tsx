@@ -29,7 +29,7 @@ export function DashboardHeaderActions() {
           <span className="hidden lg:inline">Switch business</span>
         </button>
       )}
-      <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige lg:min-h-0">
+      <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige">
         Back to site
       </Link>
       {message && (
