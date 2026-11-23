@@ -81,10 +81,17 @@ class InMemoryTransactionRepository implements TransactionRepository {
       type: input.type,
       amount: new Prisma.Decimal(input.amount),
       description: input.description,
+      saleMode: input.saleMode ?? null,
+      paymentMethod: input.paymentMethod ?? null,
+      openingDirection: input.openingDirection ?? null,
+      originalTransactionId: input.originalTransactionId ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
     });
     this.rows.push(transaction);
-    return { ...transaction, customer: this.customers.get(input.customerId) ?? null };
+    return {
+      ...transaction,
+      customer: this.customers.get(input.customerId ?? '') ?? null,
+    };
   }
 
   async createIdempotent(input: CreateTransactionRecordInput): Promise<IdempotentCreateResult> {
@@ -136,7 +143,7 @@ class InMemoryTransactionRepository implements TransactionRepository {
 
   async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
     return [...this.customers.values()]
-      .filter((c) => c.businessId === businessId)
+      .filter((c) => c.businessId === businessId && c.deletedAt === null)
       .map((c) => ({
         transactions: this.rows.filter(
           (t) => t.customerId === c.id && t.businessId === businessId && t.status === 'ACTIVE'
@@ -171,22 +178,44 @@ class InMemoryTransactionRepository implements TransactionRepository {
 type GatewayCalls = {
   ensureCustomer: Array<{ businessId: string; createdByUserId: string; name: string }>;
   getCustomerByName: Array<{ businessId: string; name: string }>;
+  getCustomerById: Array<{ businessId: string; customerId: string }>;
 };
 
 function makeGateway(repo: InMemoryTransactionRepository) {
-  const calls: GatewayCalls = { ensureCustomer: [], getCustomerByName: [] };
+  const calls: GatewayCalls = {
+    ensureCustomer: [],
+    getCustomerByName: [],
+    getCustomerById: [],
+  };
   const gateway: TransactionCustomerGateway = {
     ensureCustomer: async (businessId, createdByUserId, name) => {
       calls.ensureCustomer.push({ businessId, createdByUserId, name });
       for (const c of repo.customers.values()) {
-        if (c.businessId === businessId && c.name.toLowerCase() === name.toLowerCase()) return c;
+        if (
+          c.businessId === businessId &&
+          c.deletedAt === null &&
+          c.name.toLowerCase() === name.toLowerCase()
+        ) {
+          return c;
+        }
       }
       throw new Error('CUSTOMER_NOT_FOUND');
+    },
+    getCustomerById: async (businessId, customerId) => {
+      calls.getCustomerById.push({ businessId, customerId });
+      const customer = repo.customers.get(customerId);
+      return customer && customer.businessId === businessId && customer.deletedAt === null
+        ? customer
+        : null;
     },
     getCustomerByName: async (businessId, name) => {
       calls.getCustomerByName.push({ businessId, name });
       for (const c of repo.customers.values()) {
-        if (c.businessId === businessId && c.name.toLowerCase() === name.toLowerCase()) {
+        if (
+          c.businessId === businessId &&
+          c.deletedAt === null &&
+          c.name.toLowerCase() === name.toLowerCase()
+        ) {
           const transactions = await repo.listForCustomer(c.id, businessId);
           return {
             ...c,
@@ -273,26 +302,68 @@ describe('transaction service - creation', () => {
       customerName: 'Raju',
       amount: 200,
       type: 'PAYMENT',
+      paymentMethod: 'CASH',
     });
 
     assert.strictEqual(result.outstandingBalance, -200);
   });
 
-  it('SALE and EXPENSE do not affect outstanding', async () => {
-    const neutralTypes: Array<'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE'> = ['SALE', 'EXPENSE'];
-    for (const type of neutralTypes) {
+  it('cash SALE and EXPENSE do not affect outstanding', async () => {
+    const cases: Array<{
+      type: 'SALE' | 'EXPENSE';
+      customerName?: string;
+      saleMode?: 'CASH' | 'CREDIT';
+    }> = [
+      { type: 'SALE', customerName: 'Raju', saleMode: 'CASH' },
+      { type: 'EXPENSE' },
+    ];
+
+    for (const testCase of cases) {
       const repo = new InMemoryTransactionRepository([makeCustomer()]);
       const { gateway } = makeGateway(repo);
       const service = createTransactionService(repo, gateway);
       const result = await service.createTransaction({
         businessId: BUSINESS_ID,
         createdByUserId: CREATOR_ID,
-        customerName: 'Raju',
+        customerName: testCase.customerName,
         amount: 1000,
-        type,
+        type: testCase.type,
+        saleMode: testCase.saleMode,
+        paymentMethod: 'CASH',
       });
-      assert.strictEqual(result.outstandingBalance, 0, `${type} must not affect outstanding`);
+      assert.strictEqual(
+        result.outstandingBalance,
+        0,
+        `${testCase.type} must not affect outstanding`
+      );
     }
+  });
+
+  it('credit SALE increases outstanding while cash SALE does not', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const creditSale = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 1000,
+      type: 'SALE',
+      saleMode: 'CREDIT',
+    });
+    assert.strictEqual(creditSale.outstandingBalance, 1000);
+
+    const cashSale = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 2500,
+      type: 'SALE',
+      saleMode: 'CASH',
+      paymentMethod: 'CASH',
+    });
+    assert.strictEqual(cashSale.outstandingBalance, 1000);
   });
 
   it('customer not found is rejected', async () => {
@@ -403,6 +474,366 @@ describe('transaction service - creation', () => {
     );
     assert.strictEqual(repo.rows.length, 0);
   });
+
+  it('PAYMENT requires a payment method', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 200,
+        type: 'PAYMENT',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 400);
+        assert.match(error.message, /paymentMethod is required for PAYMENT/);
+        return true;
+      }
+    );
+    assert.strictEqual(calls.ensureCustomer.length, 0);
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('PAYMENT persists its payment method', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 200,
+      type: 'PAYMENT',
+      paymentMethod: 'UPI',
+    });
+
+    assert.strictEqual(repo.createCalls[0].paymentMethod, 'UPI');
+    assert.strictEqual(repo.createCalls[0].saleMode, null);
+    assert.strictEqual(repo.rows[0].paymentMethod, 'UPI');
+  });
+
+  it('cash SALE persists sale mode and payment method without requiring a customer', async () => {
+    const repo = new InMemoryTransactionRepository();
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      amount: 1000,
+      type: 'SALE',
+      saleMode: 'CASH',
+      paymentMethod: 'CASH',
+    });
+
+    assert.strictEqual(calls.ensureCustomer.length, 0);
+    assert.strictEqual(repo.createCalls[0].customerId, null);
+    assert.strictEqual(repo.createCalls[0].saleMode, 'CASH');
+    assert.strictEqual(repo.createCalls[0].paymentMethod, 'CASH');
+    assert.strictEqual(result.customer, null);
+    assert.strictEqual(result.outstandingBalance, 0);
+  });
+
+  it('cash SALE requires a payment method', async () => {
+    const repo = new InMemoryTransactionRepository();
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        amount: 1000,
+        type: 'SALE',
+        saleMode: 'CASH',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 400);
+        assert.match(error.message, /paymentMethod is required for a cash sale/);
+        return true;
+      }
+    );
+  });
+
+  it('credit SALE requires a customer and leaves payment method empty', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 1000,
+      type: 'SALE',
+      saleMode: 'CREDIT',
+    });
+
+    assert.strictEqual(repo.createCalls[0].customerId, 'c-1');
+    assert.strictEqual(repo.createCalls[0].saleMode, 'CREDIT');
+    assert.strictEqual(repo.createCalls[0].paymentMethod, null);
+  });
+
+  it('credit SALE rejects a payment method and a missing customer', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 1000,
+        type: 'SALE',
+        saleMode: 'CREDIT',
+        paymentMethod: 'CASH',
+      }),
+      /paymentMethod must not be set for a credit sale/
+    );
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        amount: 1000,
+        type: 'SALE',
+        saleMode: 'CREDIT',
+      }),
+      /Customer name or customer ID is required for a credit sale/
+    );
+
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('EXPENSE records without a customer and persists its payment method', async () => {
+    const repo = new InMemoryTransactionRepository();
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      amount: 250,
+      type: 'EXPENSE',
+      paymentMethod: 'BANK_TRANSFER',
+    });
+
+    assert.strictEqual(calls.ensureCustomer.length, 0);
+    assert.strictEqual(calls.getCustomerById.length, 0);
+    assert.strictEqual(repo.createCalls[0].customerId, null);
+    assert.strictEqual(repo.createCalls[0].saleMode, null);
+    assert.strictEqual(repo.createCalls[0].paymentMethod, 'BANK_TRANSFER');
+    assert.strictEqual(result.transaction.customerId, null);
+    assert.strictEqual(result.customer, null);
+  });
+
+  it('EXPENSE rejects customer fields', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 250,
+        type: 'EXPENSE',
+        paymentMethod: 'CASH',
+      }),
+      /EXPENSE does not accept a customer/
+    );
+    assert.strictEqual(calls.ensureCustomer.length, 0);
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('validates customer IDs against the authenticated business without creating a customer', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway, calls } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerId: 'c-1',
+      amount: 100,
+      type: 'CREDIT',
+    });
+
+    assert.strictEqual(calls.ensureCustomer.length, 0);
+    assert.strictEqual(calls.getCustomerById[0].businessId, BUSINESS_ID);
+    assert.strictEqual(repo.createCalls[0].customerId, 'c-1');
+  });
+
+  it('rejects missing, foreign and mismatched customers', async () => {
+    const repo = new InMemoryTransactionRepository([
+      makeCustomer(),
+      makeCustomer({ id: 'c-foreign', businessId: OTHER_BUSINESS_ID, name: 'Amit' }),
+    ]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerId: 'missing',
+        amount: 100,
+        type: 'CREDIT',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 404);
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerId: 'c-foreign',
+        amount: 100,
+        type: 'CREDIT',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 404);
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerId: 'c-1',
+        customerName: 'Amit',
+        amount: 100,
+        type: 'CREDIT',
+      }),
+      /Customer ID and customer name do not match/
+    );
+
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('rejects a soft-deleted customer ID', async () => {
+    const repo = new InMemoryTransactionRepository([
+      makeCustomer({ deletedAt: CREATED_AT }),
+    ]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerId: 'c-1',
+        amount: 100,
+        type: 'CREDIT',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 404);
+        assert.match(error.message, /Customer not found/);
+        return true;
+      }
+    );
+
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('rejects opening-balance and linked transaction fields for supported types', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 100,
+        type: 'CREDIT',
+        openingDirection: 'INCREASE',
+      }),
+      /Opening balance transactions are not supported/
+    );
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 100,
+        type: 'CREDIT',
+        originalTransactionId: 'tx-original',
+      }),
+      /Linked transactions are not supported/
+    );
+
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('idempotent replay checks the key before resolving a customer', async () => {
+    const repo = new InMemoryTransactionRepository();
+    let customerCreates = 0;
+    const gateway: TransactionCustomerGateway = {
+      ensureCustomer: async (businessId, createdByUserId, name) => {
+        customerCreates += 1;
+        const customer = makeCustomer({
+          id: `created-${customerCreates}`,
+          businessId,
+          createdByUserId,
+          name,
+        });
+        repo.customers.set(customer.id, customer);
+        return customer;
+      },
+      getCustomerById: async () => null,
+      getCustomerByName: async () => null,
+    };
+    const service = createTransactionService(repo, gateway);
+
+    const first = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 100,
+      type: 'CREDIT',
+      idempotencyKey: 'same-key',
+    });
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Ghost',
+        amount: 100,
+        type: 'CREDIT',
+        idempotencyKey: 'same-key',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 409);
+        return true;
+      }
+    );
+
+    assert.strictEqual(first.transaction.id, repo.rows[0].id);
+    assert.strictEqual(customerCreates, 1);
+    assert.strictEqual(repo.customers.size, 1);
+    assert.strictEqual(repo.rows.length, 1);
+  });
 });
 
 describe('transaction service - business-scoped reads', () => {
@@ -442,6 +873,24 @@ describe('transaction service - business-scoped reads', () => {
     assert.ok(voided, 'VOIDED detail remains available for audit');
     assert.strictEqual(await service.getTransactionById(BUSINESS_ID, 'foreign'), null);
     assert.strictEqual(await service.getTransactionById(OTHER_BUSINESS_ID, 'own'), null);
+  });
+
+  it('historical transaction detail and history remain accessible after customer soft deletion', async () => {
+    const repo = new InMemoryTransactionRepository([
+      makeCustomer({ deletedAt: CREATED_AT }),
+    ]);
+    repo.rows.push(makeTransaction({ id: 'historical', businessId: BUSINESS_ID }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const detail = await service.getTransactionById(BUSINESS_ID, 'historical');
+    const history = await service.getTransactionHistory(BUSINESS_ID);
+
+    assert.ok(detail, 'transaction detail must remain readable');
+    assert.strictEqual(detail.customerId, 'c-1');
+    assert.strictEqual(history.total, 1);
+    assert.strictEqual(history.transactions[0].id, 'historical');
+    assert.strictEqual(await service.getCustomerBalanceForName(BUSINESS_ID, 'Raju'), null);
   });
 
   it('history is business-scoped with default page/limit', async () => {
@@ -484,15 +933,29 @@ describe('transaction service - business-scoped reads', () => {
     const repo = new InMemoryTransactionRepository([customer]);
     repo.rows.push(makeTransaction({ businessId: BUSINESS_ID, amount: new Prisma.Decimal('100.50') }));
     repo.rows.push(makeTransaction({ id: 'p', businessId: BUSINESS_ID, type: 'PAYMENT', amount: new Prisma.Decimal('25.25') }));
+    repo.rows.push(makeTransaction({
+      id: 'sale-credit',
+      businessId: BUSINESS_ID,
+      type: 'SALE',
+      saleMode: 'CREDIT',
+      amount: new Prisma.Decimal('10.10'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'sale-cash',
+      businessId: BUSINESS_ID,
+      type: 'SALE',
+      saleMode: 'CASH',
+      amount: new Prisma.Decimal('50'),
+    }));
     const { gateway, calls } = makeGateway(repo);
     const service = createTransactionService(repo, gateway);
 
     const balance = await service.getCustomerBalanceForName(BUSINESS_ID, 'Raju');
 
     assert.ok(balance);
-    assert.strictEqual(balance.outstandingBalance, 75.25);
+    assert.strictEqual(balance.outstandingBalance, 85.35);
     assert.strictEqual(typeof balance.outstandingBalance, 'number');
-    assert.strictEqual(balance.balanceText, '₹75.25');
+    assert.strictEqual(balance.balanceText, '₹85.35');
     assert.strictEqual(calls.getCustomerByName[0].businessId, BUSINESS_ID);
     assert.strictEqual(await service.getCustomerBalanceForName(OTHER_BUSINESS_ID, 'Raju'), null);
   });
@@ -525,6 +988,85 @@ describe('transaction service - outstanding and errors', () => {
 
     const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
     assert.strictEqual(total.totalOutstanding, 500);
+  });
+
+  it('soft-deleted customers do not contribute to total outstanding', async () => {
+    const repo = new InMemoryTransactionRepository([
+      makeCustomer({ id: 'active', name: 'Raju' }),
+      makeCustomer({ id: 'deleted', name: 'Amit', deletedAt: CREATED_AT }),
+    ]);
+    repo.rows.push(makeTransaction({
+      id: 'active-credit',
+      customerId: 'active',
+      amount: new Prisma.Decimal('500'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'deleted-credit',
+      customerId: 'deleted',
+      amount: new Prisma.Decimal('900'),
+    }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
+
+    assert.strictEqual(total.totalOutstanding, 500);
+    assert.strictEqual(repo.rows.length, 2, 'historical rows are preserved');
+  });
+
+  it('total outstanding mirrors PostgreSQL customer_balance for every type', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    repo.rows.push(makeTransaction({ id: 'credit', type: 'CREDIT', amount: new Prisma.Decimal('1000') }));
+    repo.rows.push(makeTransaction({ id: 'payment', type: 'PAYMENT', amount: new Prisma.Decimal('200') }));
+    repo.rows.push(makeTransaction({
+      id: 'sale-credit',
+      type: 'SALE',
+      saleMode: 'CREDIT',
+      amount: new Prisma.Decimal('500'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'sale-cash',
+      type: 'SALE',
+      saleMode: 'CASH',
+      amount: new Prisma.Decimal('300'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'expense',
+      type: 'EXPENSE',
+      customerId: null,
+      amount: new Prisma.Decimal('100'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'opening-increase',
+      type: 'OPENING_BALANCE',
+      openingDirection: 'INCREASE',
+      amount: new Prisma.Decimal('50'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'opening-decrease',
+      type: 'OPENING_BALANCE',
+      openingDirection: 'DECREASE',
+      amount: new Prisma.Decimal('25'),
+    }));
+    repo.rows.push(makeTransaction({
+      id: 'sale-return',
+      type: 'SALE_RETURN',
+      amount: new Prisma.Decimal('75'),
+    }));
+    repo.rows.push(makeTransaction({ id: 'refund', type: 'REFUND', amount: new Prisma.Decimal('10') }));
+    repo.rows.push(makeTransaction({
+      id: 'voided-credit',
+      type: 'CREDIT',
+      amount: new Prisma.Decimal('900'),
+      status: 'VOIDED',
+    }));
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const total = await service.getTotalOutstandingForUser(BUSINESS_ID);
+
+    assert.strictEqual(total.totalOutstanding, 1260);
+    assert.strictEqual(total.totalOutstandingText, '₹1,260');
   });
 
   it('integer totals remain exact', async () => {
@@ -627,6 +1169,54 @@ describe('transaction service - idempotency', () => {
     ]);
     assert.strictEqual(repo.rows.length, 1);
     assert.strictEqual(a.transaction.id, b.transaction.id);
+  });
+
+  it('concurrent same-key requests do not create an extra customer', async () => {
+    const repo = new InMemoryTransactionRepository();
+    let customerCreates = 0;
+    const gateway: TransactionCustomerGateway = {
+      ensureCustomer: async (businessId, createdByUserId, name) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        for (const customer of repo.customers.values()) {
+          if (
+            customer.businessId === businessId &&
+            customer.name.toLowerCase() === name.toLowerCase()
+          ) {
+            return customer;
+          }
+        }
+        customerCreates += 1;
+        const customer = makeCustomer({
+          id: `concurrent-${customerCreates}`,
+          businessId,
+          createdByUserId,
+          name,
+        });
+        repo.customers.set(customer.id, customer);
+        return customer;
+      },
+      getCustomerById: async () => null,
+      getCustomerByName: async () => null,
+    };
+    const service = createTransactionService(repo, gateway);
+    const input = {
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'New Customer',
+      amount: 100,
+      type: 'CREDIT' as const,
+      idempotencyKey: 'concurrent-new-customer',
+    };
+
+    const [first, second] = await Promise.all([
+      service.createTransaction(input),
+      service.createTransaction(input),
+    ]);
+
+    assert.strictEqual(first.transaction.id, second.transaction.id);
+    assert.strictEqual(customerCreates, 1);
+    assert.strictEqual(repo.customers.size, 1);
+    assert.strictEqual(repo.rows.length, 1);
   });
 
   it('same key reused with a different payload is rejected with 409', async () => {

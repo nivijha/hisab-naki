@@ -17,8 +17,7 @@ export type UpdateCustomerData = {
 
 export type DeleteCustomerOutcome =
   | { status: 'DELETED' }
-  | { status: 'NOT_FOUND' }
-  | { status: 'HAS_TRANSACTIONS' };
+  | { status: 'NOT_FOUND' };
 
 export interface CustomerRepository {
   create(input: CreateCustomerInput): Promise<Customer>;
@@ -54,7 +53,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     data: UpdateCustomerData
   ): Promise<Customer | null> {
     const result = await this.client.customer.updateMany({
-      where: { id: customerId, businessId },
+      where: { id: customerId, businessId, deletedAt: null },
       data,
     });
 
@@ -63,30 +62,14 @@ export class PrismaCustomerRepository implements CustomerRepository {
     }
 
     return this.client.customer.findFirst({
-      where: { id: customerId, businessId },
+      where: { id: customerId, businessId, deletedAt: null },
     });
   }
 
   async delete(businessId: string, customerId: string): Promise<DeleteCustomerOutcome> {
-    const customer = await this.client.customer.findFirst({
-      where: { id: customerId, businessId },
-      select: { id: true },
-    });
-
-    if (!customer) {
-      return { status: 'NOT_FOUND' };
-    }
-
-    const transactionCount = await this.client.transaction.count({
-      where: { customerId, businessId },
-    });
-
-    if (transactionCount > 0) {
-      return { status: 'HAS_TRANSACTIONS' };
-    }
-
-    const result = await this.client.customer.deleteMany({
-      where: { id: customerId, businessId },
+    const result = await this.client.customer.updateMany({
+      where: { id: customerId, businessId, deletedAt: null },
+      data: { deletedAt: new Date() },
     });
 
     if (result.count === 0) {
@@ -98,7 +81,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
   findById(businessId: string, customerId: string): Promise<CustomerWithTransactions | null> {
     return this.client.customer.findFirst({
-      where: { id: customerId, businessId },
+      where: { id: customerId, businessId, deletedAt: null },
       include: {
         transactions: { orderBy: { createdAt: 'desc' } },
       },
@@ -109,6 +92,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     return this.client.customer.findFirst({
       where: {
         businessId,
+        deletedAt: null,
         name: { equals: customerName, mode: 'insensitive' },
       },
       include: {
@@ -121,6 +105,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
     return this.client.customer.findFirst({
       where: {
         businessId,
+        deletedAt: null,
         name: { equals: customerName, mode: 'insensitive' },
       },
     });
@@ -128,7 +113,7 @@ export class PrismaCustomerRepository implements CustomerRepository {
 
   listForBusiness(businessId: string): Promise<CustomerWithTransactions[]> {
     return this.client.customer.findMany({
-      where: { businessId },
+      where: { businessId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       include: { transactions: true },
     });

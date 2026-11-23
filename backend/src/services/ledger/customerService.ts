@@ -16,7 +16,7 @@ export type UpdateCustomerResult =
 
 export type DeleteCustomerResult =
   | { ok: true }
-  | { ok: false; code: 'NOT_FOUND' | 'HAS_TRANSACTIONS'; message: string };
+  | { ok: false; code: 'NOT_FOUND'; message: string };
 
 export function createCustomerService(repository: CustomerRepository) {
   async function ensureCustomer(
@@ -104,14 +104,6 @@ export function createCustomerService(repository: CustomerRepository) {
 
     if (outcome.status === 'DELETED') {
       return { ok: true };
-    }
-
-    if (outcome.status === 'HAS_TRANSACTIONS') {
-      return {
-        ok: false,
-        code: 'HAS_TRANSACTIONS',
-        message: 'Cannot delete a customer with transaction history.',
-      };
     }
 
     return { ok: false, code: 'NOT_FOUND', message: 'Customer not found.' };

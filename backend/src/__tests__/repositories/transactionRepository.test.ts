@@ -126,6 +126,7 @@ describe('PrismaTransactionRepository - multi-tenant schema', () => {
       type: 'PAYMENT',
       amount: decimalAmount,
       description: 'payment',
+      paymentMethod: 'CASH',
     });
 
     const data = calls.create[0].data as Record<string, unknown>;
@@ -135,7 +136,34 @@ describe('PrismaTransactionRepository - multi-tenant schema', () => {
     assert.strictEqual(data.type, 'PAYMENT');
     assert.strictEqual(data.amount, decimalAmount);
     assert.strictEqual(data.description, 'payment');
+    assert.strictEqual(data.paymentMethod, 'CASH');
+    assert.strictEqual(data.saleMode, null);
+    assert.strictEqual(data.openingDirection, null);
+    assert.strictEqual(data.originalTransactionId, null);
     assert.ok(!('userId' in data));
+  });
+
+  it('persists conditional sale fields without inventing a customer', async () => {
+    const { client, calls } = makeMockPrisma({ createResult: makeTransaction() });
+    const repo = new PrismaTransactionRepository(client);
+
+    await repo.create({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerId: null,
+      type: 'SALE',
+      amount: 500,
+      description: 'cash sale',
+      saleMode: 'CASH',
+      paymentMethod: 'UPI',
+    });
+
+    const data = calls.create[0].data as Record<string, unknown>;
+    assert.strictEqual(data.customerId, null);
+    assert.strictEqual(data.saleMode, 'CASH');
+    assert.strictEqual(data.paymentMethod, 'UPI');
+    assert.strictEqual(data.openingDirection, null);
+    assert.strictEqual(data.originalTransactionId, null);
   });
 
   it('findById filters by both transaction ID and businessId', async () => {
@@ -200,7 +228,10 @@ describe('PrismaTransactionRepository - multi-tenant schema', () => {
 
     assert.strictEqual(result.length, 1);
     assert.strictEqual(result[0].transactions[0].amount instanceof Prisma.Decimal, true);
-    assert.deepStrictEqual(calls.customerFindMany[0].where, { businessId: BUSINESS_ID });
+    assert.deepStrictEqual(calls.customerFindMany[0].where, {
+      businessId: BUSINESS_ID,
+      deletedAt: null,
+    });
     assert.deepStrictEqual(calls.customerFindMany[0].include, {
       transactions: { where: { status: 'ACTIVE' } },
     });
@@ -298,6 +329,10 @@ describe('PrismaTransactionRepository - idempotency', () => {
     const data = calls.create[0].data as Record<string, unknown>;
     assert.strictEqual(data.idempotencyKey, 'key-1');
     assert.strictEqual(data.businessId, BUSINESS_ID);
+    assert.strictEqual(data.saleMode, null);
+    assert.strictEqual(data.paymentMethod, null);
+    assert.strictEqual(data.openingDirection, null);
+    assert.strictEqual(data.originalTransactionId, null);
   });
 
   it('returns the existing transaction without creating when the key already exists', async () => {

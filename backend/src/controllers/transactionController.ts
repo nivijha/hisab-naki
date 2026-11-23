@@ -8,6 +8,7 @@ import {
   getTransactionById,
   getTransactionHistory,
   getTransactionsForUser,
+  type TransactionCreateType,
 } from '../services/ledger/transactionService.js';
 import { HttpError, requireAuth } from '../middleware/authenticate.js';
 import { logger } from '../utils/logger.js';
@@ -40,7 +41,19 @@ export function createTransactionController(
   async function createTransactionHandler(req: Request, res: Response) {
     try {
       const { businessId, userId } = requireAuth(req);
-      const { intent, customerName, amount, description, type, idempotencyKey } = req.body ?? {};
+      const {
+        intent,
+        customerId,
+        customerName,
+        amount,
+        description,
+        type,
+        saleMode,
+        paymentMethod,
+        openingDirection,
+        originalTransactionId,
+        idempotencyKey,
+      } = req.body ?? {};
 
       if (intent === 'GET_BALANCE' && customerName) {
         const balance = await services.getCustomerBalanceForName(businessId, String(customerName));
@@ -84,39 +97,47 @@ export function createTransactionController(
         });
       }
 
-      if (!customerName || !amount || !type) {
-        return res.status(400).json({
-          ok: false,
-          message: 'Customer name, amount and type are required for a ledger update.',
-        });
-      }
-
       const transactionTypeMap = {
         ADD_CREDIT: 'CREDIT',
         RECORD_PAYMENT: 'PAYMENT',
         ADD_SALE: 'SALE',
         ADD_EXPENSE: 'EXPENSE',
       } as const;
-      const resolvedType = (type ?? transactionTypeMap[intent as keyof typeof transactionTypeMap]) as
-        | 'CREDIT'
-        | 'PAYMENT'
-        | 'SALE'
-        | 'EXPENSE';
+      const resolvedType = (type ??
+        transactionTypeMap[intent as keyof typeof transactionTypeMap]) as TransactionCreateType | undefined;
+
+      if (amount === undefined || amount === null || !resolvedType) {
+        return res.status(400).json({
+          ok: false,
+          message: 'Amount and transaction type are required for a ledger update.',
+        });
+      }
 
       const row = await services.createTransaction({
         businessId,
         createdByUserId: userId,
-        customerName: String(customerName).trim(),
+        customerId: customerId ? String(customerId).trim() : undefined,
+        customerName: customerName ? String(customerName).trim() : undefined,
         amount: Number(amount),
         type: resolvedType,
         description: description ? String(description) : 'Ledger update',
+        saleMode: saleMode ?? undefined,
+        paymentMethod: paymentMethod ?? undefined,
+        openingDirection: openingDirection ?? undefined,
+        originalTransactionId: originalTransactionId
+          ? String(originalTransactionId).trim()
+          : undefined,
         idempotencyKey: idempotencyKey ? String(idempotencyKey) : undefined,
       });
+
+      const responseText = row.customer
+        ? `${row.customer.name} ke account mein ${row.outstandingBalance} ka balance hai.`
+        : `${resolvedType} recorded.`;
 
       return res.status(201).json({
         ok: true,
         data: row,
-        responseText: `${row.customer.name} ke account mein ${row.outstandingBalance} ka balance hai.`,
+        responseText,
       });
     } catch (error) {
       if (error instanceof HttpError) {

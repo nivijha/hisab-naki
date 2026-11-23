@@ -32,8 +32,6 @@ type MockConfig = {
   updateCount?: number;
   findFirstResult?: Customer | CustomerWithTransactions | null;
   findManyResult?: CustomerWithTransactions[];
-  deleteCount?: number;
-  transactionCount?: number;
 };
 
 function makeMockPrisma(config: MockConfig = {}) {
@@ -42,8 +40,6 @@ function makeMockPrisma(config: MockConfig = {}) {
     updateMany: [] as Prisma.CustomerUpdateManyArgs[],
     findFirst: [] as Prisma.CustomerFindFirstArgs[],
     findMany: [] as Prisma.CustomerFindManyArgs[],
-    deleteMany: [] as Prisma.CustomerDeleteManyArgs[],
-    transactionCount: [] as Prisma.TransactionCountArgs[],
   };
 
   // Test double: only the delegates used by PrismaCustomerRepository are implemented.
@@ -66,16 +62,6 @@ function makeMockPrisma(config: MockConfig = {}) {
       findMany: async (args: Prisma.CustomerFindManyArgs): Promise<CustomerWithTransactions[]> => {
         calls.findMany.push(args);
         return config.findManyResult ?? [];
-      },
-      deleteMany: async (args: Prisma.CustomerDeleteManyArgs): Promise<Prisma.BatchPayload> => {
-        calls.deleteMany.push(args);
-        return { count: config.deleteCount ?? 1 };
-      },
-    },
-    transaction: {
-      count: async (args: Prisma.TransactionCountArgs): Promise<number> => {
-        calls.transactionCount.push(args);
-        return config.transactionCount ?? 0;
       },
     },
   } as unknown as PrismaClient;
@@ -124,7 +110,10 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
     const result = await repo.listForBusiness(BUSINESS_ID);
 
     assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(calls.findMany[0].where, { businessId: BUSINESS_ID });
+    assert.deepStrictEqual(calls.findMany[0].where, {
+      businessId: BUSINESS_ID,
+      deletedAt: null,
+    });
     assert.deepStrictEqual(calls.findMany[0].orderBy, { createdAt: 'desc' });
     assert.deepStrictEqual(calls.findMany[0].include, { transactions: true });
   });
@@ -141,6 +130,7 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
     assert.deepStrictEqual(calls.findFirst[0].where, {
       id: CUSTOMER_ID,
       businessId: BUSINESS_ID,
+      deletedAt: null,
     });
     assert.deepStrictEqual(calls.findFirst[0].include, {
       transactions: { orderBy: { createdAt: 'desc' } },
@@ -157,6 +147,7 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
 
     assert.deepStrictEqual(calls.findFirst[0].where, {
       businessId: BUSINESS_ID,
+      deletedAt: null,
       name: { equals: 'raju', mode: 'insensitive' },
     });
   });
@@ -171,6 +162,7 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
     assert.strictEqual(result?.id, 'existing-customer');
     assert.deepStrictEqual(calls.findFirst[0].where, {
       businessId: BUSINESS_ID,
+      deletedAt: null,
       name: { equals: 'RAJU', mode: 'insensitive' },
     });
   });
@@ -195,11 +187,13 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
     assert.deepStrictEqual(calls.updateMany[0].where, {
       id: CUSTOMER_ID,
       businessId: BUSINESS_ID,
+      deletedAt: null,
     });
     assert.deepStrictEqual(calls.updateMany[0].data, { name: 'Raju Sharma' });
     assert.deepStrictEqual(calls.findFirst[0].where, {
       id: CUSTOMER_ID,
       businessId: BUSINESS_ID,
+      deletedAt: null,
     });
   });
 
@@ -213,72 +207,64 @@ describe('PrismaCustomerRepository - multi-tenant schema', () => {
     assert.deepStrictEqual(calls.updateMany[0].where, {
       id: CUSTOMER_ID,
       businessId: OTHER_BUSINESS_ID,
+      deletedAt: null,
     });
     assert.strictEqual(calls.findFirst.length, 0, 'no re-read after zero-row update');
   });
 
-  it('deletes a customer without transactions and scopes all checks by business', async () => {
-    const { client, calls } = makeMockPrisma({
-      findFirstResult: makeCustomer(),
-      transactionCount: 0,
-      deleteCount: 1,
-    });
+  it('soft-deletes a customer by setting deletedAt within the business', async () => {
+    const { client, calls } = makeMockPrisma({ updateCount: 1 });
     const repo = new PrismaCustomerRepository(client);
 
     const result = await repo.delete(BUSINESS_ID, CUSTOMER_ID);
 
     assert.deepStrictEqual(result, { status: 'DELETED' });
-    assert.deepStrictEqual(calls.findFirst[0].where, {
+    assert.deepStrictEqual(calls.updateMany[0].where, {
       id: CUSTOMER_ID,
       businessId: BUSINESS_ID,
+      deletedAt: null,
     });
-    assert.deepStrictEqual(calls.transactionCount[0].where, {
-      customerId: CUSTOMER_ID,
-      businessId: BUSINESS_ID,
-    });
-    assert.deepStrictEqual(calls.deleteMany[0].where, {
-      id: CUSTOMER_ID,
-      businessId: BUSINESS_ID,
-    });
+    const data = calls.updateMany[0].data as Record<string, unknown>;
+    assert.ok(data.deletedAt instanceof Date, 'deletedAt must be a timestamp');
+    assert.strictEqual(Object.keys(data).length, 1, 'only deletedAt is modified');
   });
 
-  it('blocks deletion when the customer has transactions', async () => {
-    const { client, calls } = makeMockPrisma({
-      findFirstResult: makeCustomer(),
-      transactionCount: 2,
-    });
+  it('soft deletion does not delete transaction rows', async () => {
+    const { client, calls } = makeMockPrisma({ updateCount: 1 });
     const repo = new PrismaCustomerRepository(client);
 
     const result = await repo.delete(BUSINESS_ID, CUSTOMER_ID);
 
-    assert.deepStrictEqual(result, { status: 'HAS_TRANSACTIONS' });
-    assert.strictEqual(calls.deleteMany.length, 0, 'must not delete a customer with history');
+    assert.deepStrictEqual(result, { status: 'DELETED' });
+    assert.strictEqual(calls.updateMany.length, 1);
+    assert.strictEqual(calls.findFirst.length, 0);
   });
 
-  it('returns NOT_FOUND for a customer in another business (no cross-business deletion)', async () => {
-    const { client, calls } = makeMockPrisma({ findFirstResult: null });
+  it('returns NOT_FOUND when soft-deleting a customer in another business', async () => {
+    const { client, calls } = makeMockPrisma({ updateCount: 0 });
     const repo = new PrismaCustomerRepository(client);
 
     const result = await repo.delete(OTHER_BUSINESS_ID, CUSTOMER_ID);
 
     assert.deepStrictEqual(result, { status: 'NOT_FOUND' });
-    assert.deepStrictEqual(calls.findFirst[0].where, {
+    assert.deepStrictEqual(calls.updateMany[0].where, {
       id: CUSTOMER_ID,
       businessId: OTHER_BUSINESS_ID,
+      deletedAt: null,
     });
-    assert.strictEqual(calls.deleteMany.length, 0, 'no delete for foreign customer');
   });
 
-  it('returns NOT_FOUND when deleteMany removes no rows', async () => {
-    const { client } = makeMockPrisma({
-      findFirstResult: makeCustomer(),
-      transactionCount: 0,
-      deleteCount: 0,
-    });
+  it('returns NOT_FOUND when the customer is already soft-deleted', async () => {
+    const { client, calls } = makeMockPrisma({ updateCount: 0 });
     const repo = new PrismaCustomerRepository(client);
 
-    assert.deepStrictEqual(await repo.delete(BUSINESS_ID, CUSTOMER_ID), {
-      status: 'NOT_FOUND',
+    const result = await repo.delete(BUSINESS_ID, CUSTOMER_ID);
+
+    assert.deepStrictEqual(result, { status: 'NOT_FOUND' });
+    assert.deepStrictEqual(calls.updateMany[0].where, {
+      id: CUSTOMER_ID,
+      businessId: BUSINESS_ID,
+      deletedAt: null,
     });
   });
 });

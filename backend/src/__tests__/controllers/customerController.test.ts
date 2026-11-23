@@ -3,7 +3,9 @@ import assert from 'node:assert';
 import { createCustomerController, type CustomerControllerServices } from '../../controllers/customerController.js';
 import { TEST_AUTH, makeReq, makeRes } from '../helpers/http.js';
 
-function makeServices() {
+type DeleteResult = { ok: true } | { ok: false; code: 'NOT_FOUND'; message: string };
+
+function makeServices(deleteResult: DeleteResult = { ok: true }) {
   const calls: Record<string, unknown[][]> = {
     ensureCustomer: [],
     getCustomersForBusiness: [],
@@ -35,7 +37,7 @@ function makeServices() {
     },
     deleteCustomer: async (...args: unknown[]) => {
       calls.deleteCustomer.push(args);
-      return { ok: true };
+      return deleteResult;
     },
   } as unknown as CustomerControllerServices;
   return { services, calls };
@@ -104,5 +106,37 @@ describe('customer controller - tenant context', () => {
 
     assert.strictEqual(calls.updateCustomer[0][0], 'biz-1');
     assert.deepStrictEqual(calls.deleteCustomer[0], ['biz-1', 'c-1']);
+  });
+
+  it('successful soft delete returns HTTP 200', async () => {
+    const { services } = makeServices();
+    const controller = createCustomerController(services);
+    const res = makeRes();
+
+    await controller.deleteCustomerHandler(
+      makeReq({ auth: TEST_AUTH, params: { id: 'c-1' } }),
+      res
+    );
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(res.body, { ok: true, data: { id: 'c-1' } });
+  });
+
+  it('missing, deleted, or foreign customer returns HTTP 404', async () => {
+    const { services } = makeServices({
+      ok: false,
+      code: 'NOT_FOUND',
+      message: 'Customer not found.',
+    });
+    const controller = createCustomerController(services);
+    const res = makeRes();
+
+    await controller.deleteCustomerHandler(
+      makeReq({ auth: TEST_AUTH, params: { id: 'c-1' } }),
+      res
+    );
+
+    assert.strictEqual(res.statusCode, 404);
+    assert.deepStrictEqual(res.body, { ok: false, message: 'Customer not found.' });
   });
 });
