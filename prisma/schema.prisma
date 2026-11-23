@@ -215,6 +215,7 @@ model Transaction {
   voiceRequest VoiceTransactionRequest?
 
   @@unique([businessId, id])
+  @@unique([businessId, idempotencyKey])
   @@index([businessId, occurredAt])
   @@index([businessId, customerId, occurredAt])
   @@index([businessId, type, status])

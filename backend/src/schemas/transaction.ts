@@ -7,7 +7,16 @@ const readIntents = [
   'GET_CUSTOMER_TRANSACTIONS',
 ] as const;
 
+const writeIntentToType = {
+  ADD_CREDIT: 'CREDIT',
+  RECORD_PAYMENT: 'PAYMENT',
+  ADD_SALE: 'SALE',
+  ADD_EXPENSE: 'EXPENSE',
+} as const;
+
 type ReadIntent = (typeof readIntents)[number];
+type WriteIntent = keyof typeof writeIntentToType;
+type WriteType = (typeof writeIntentToType)[WriteIntent];
 
 function hasAtMostTwoDecimals(value: number): boolean {
   if (!Number.isFinite(value)) return false;
@@ -35,6 +44,11 @@ export const listTransactionsQuerySchema = z.object({
   to: z.coerce.date({ invalid_type_error: 'to must be a valid date.' }).optional(),
 });
 
+const transactionTypeSchema = z.enum(['CREDIT', 'PAYMENT', 'SALE', 'EXPENSE']);
+const saleModeSchema = z.enum(['CASH', 'CREDIT']);
+const paymentMethodSchema = z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER']);
+const openingDirectionSchema = z.enum(['INCREASE', 'DECREASE']);
+
 export const createTransactionSchema = z
   .object({
     intent: z
@@ -49,7 +63,8 @@ export const createTransactionSchema = z
         'GET_CUSTOMER_TRANSACTIONS',
       ])
       .optional(),
-    customerName: z.string().trim().min(1).optional(),
+    customerId: z.string().trim().min(1, 'Customer ID cannot be empty.').nullable().optional(),
+    customerName: z.string().trim().min(1, 'Customer name cannot be empty.').nullable().optional(),
     amount: z
       .preprocess(
         (val) => (typeof val === 'string' ? Number(val) : val),
@@ -59,41 +74,185 @@ export const createTransactionSchema = z
           .refine(hasAtMostTwoDecimals, 'Amount supports at most two decimal places.')
       )
       .optional(),
-    description: z.string().optional(),
-    type: z.enum(['CREDIT', 'PAYMENT', 'SALE', 'EXPENSE']).optional(),
+    description: z.string().nullable().optional(),
+    type: transactionTypeSchema.nullable().optional(),
+    saleMode: saleModeSchema.nullable().optional(),
+    paymentMethod: paymentMethodSchema.nullable().optional(),
+    openingDirection: openingDirectionSchema.nullable().optional(),
+    originalTransactionId: z
+      .string()
+      .trim()
+      .min(1, 'Original transaction ID cannot be empty.')
+      .nullable()
+      .optional(),
     idempotencyKey: z
       .string()
       .trim()
       .min(1, 'Idempotency key cannot be empty.')
       .max(200, 'Idempotency key is too long.')
+      .nullable()
       .optional(),
   })
   .superRefine((data, ctx) => {
     const isReadIntent = data.intent ? readIntents.includes(data.intent as ReadIntent) : false;
 
-    if (!isReadIntent) {
-      if (!data.customerName) {
+    if (isReadIntent) {
+      return;
+    }
+
+    const inferredType = data.type ?? (data.intent ? writeIntentToType[data.intent as WriteIntent] : null);
+    const type = inferredType as WriteType | null;
+    const hasCustomer = Boolean(data.customerId || data.customerName);
+
+    if (!type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Transaction type is required for a ledger update.',
+        path: ['type'],
+      });
+    }
+
+    if (data.amount === undefined || data.amount === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Amount is required for a ledger update.',
+        path: ['amount'],
+      });
+    }
+
+    if (data.openingDirection) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Opening balance transactions are not supported by this endpoint.',
+        path: ['openingDirection'],
+      });
+    }
+
+    if (data.originalTransactionId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Linked transactions are not supported by this endpoint.',
+        path: ['originalTransactionId'],
+      });
+    }
+
+    if (!type) {
+      return;
+    }
+
+    if (type === 'CREDIT') {
+      if (!hasCustomer) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Customer name is required for a ledger update.',
+          message: 'Customer name or customer ID is required for CREDIT.',
           path: ['customerName'],
         });
       }
-
-      if (data.amount === undefined || data.amount === null) {
+      if (data.saleMode) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Amount is required for a ledger update.',
-          path: ['amount'],
+          message: 'saleMode is only valid for SALE transactions.',
+          path: ['saleMode'],
+        });
+      }
+      if (data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is not valid for CREDIT transactions.',
+          path: ['paymentMethod'],
+        });
+      }
+      return;
+    }
+
+    if (type === 'PAYMENT') {
+      if (!hasCustomer) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Customer name or customer ID is required for PAYMENT.',
+          path: ['customerName'],
+        });
+      }
+      if (data.saleMode) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'saleMode is only valid for SALE transactions.',
+          path: ['saleMode'],
+        });
+      }
+      if (!data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is required for PAYMENT.',
+          path: ['paymentMethod'],
+        });
+      }
+      return;
+    }
+
+    if (type === 'SALE') {
+      if (!data.saleMode) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'saleMode is required for SALE.',
+          path: ['saleMode'],
+        });
+        return;
+      }
+
+      if (data.saleMode === 'CASH' && !data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is required for a cash sale.',
+          path: ['paymentMethod'],
         });
       }
 
-      if (!data.type) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Transaction type is required for a ledger update.',
-          path: ['type'],
-        });
+      if (data.saleMode === 'CREDIT') {
+        if (!hasCustomer) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Customer name or customer ID is required for a credit sale.',
+            path: ['customerName'],
+          });
+        }
+        if (data.paymentMethod) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'paymentMethod must not be set for a credit sale.',
+            path: ['paymentMethod'],
+          });
+        }
       }
+      return;
+    }
+
+    if (data.customerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'EXPENSE does not accept a customer.',
+        path: ['customerId'],
+      });
+    }
+    if (data.customerName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'EXPENSE does not accept a customer.',
+        path: ['customerName'],
+      });
+    }
+    if (data.saleMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'saleMode is only valid for SALE transactions.',
+        path: ['saleMode'],
+      });
+    }
+    if (!data.paymentMethod) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'paymentMethod is required for EXPENSE.',
+        path: ['paymentMethod'],
+      });
     }
   });

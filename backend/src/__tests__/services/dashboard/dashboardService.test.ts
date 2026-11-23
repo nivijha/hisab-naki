@@ -51,7 +51,11 @@ function makeTransaction(
   };
 }
 
-type ScopedGroup = { businessId: string; transactions: Transaction[] };
+type ScopedGroup = {
+  businessId: string;
+  transactions: Transaction[];
+  deletedAt?: Date | null;
+};
 
 class InMemoryDashboardRepository implements TransactionRepository {
   readonly transactions: TransactionWithCustomer[] = [];
@@ -91,7 +95,7 @@ class InMemoryDashboardRepository implements TransactionRepository {
   async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
     this.businessReads.push(businessId);
     return this.groups
-      .filter((g) => g.businessId === businessId)
+      .filter((g) => g.businessId === businessId && (g.deletedAt ?? null) === null)
       .map((g) => ({
         transactions: g.transactions.filter((transaction) => transaction.status === 'ACTIVE'),
       }));
@@ -133,14 +137,14 @@ describe('dashboard service', () => {
       transactions: [
         makeTransaction('t1', 'CREDIT', 500, NOW),
         makeTransaction('t2', 'PAYMENT', 200, NOW),
-        makeTransaction('t3', 'SALE', 1000, NOW),
+        makeTransaction('t3', 'SALE', 1000, NOW, { saleMode: 'CASH' }),
         makeTransaction('t4', 'EXPENSE', 300, NOW),
       ],
     });
     const service = makeService(repo);
 
     const summary = await service.getDashboardSummary(BUSINESS_ID);
-    assert.strictEqual(summary.totalOutstanding, 300, 'CREDIT 500 - PAYMENT 200; SALE/EXPENSE ignored');
+    assert.strictEqual(summary.totalOutstanding, 300, 'CREDIT 500 - PAYMENT 200; cash SALE/EXPENSE ignored');
   });
 
   it('3. recent transaction ordering and limit', async () => {
@@ -181,6 +185,24 @@ describe('dashboard service', () => {
     assert.strictEqual(groupsRead, 1, 'customer groups are read internally');
     assert.strictEqual(summary.totalOutstanding, 60, 'both customer groups contribute');
     assert.ok(!('customerCount' in summary), 'customerCount is not part of the API response');
+  });
+
+  it('4b. deleted customers are excluded from outstanding but their history is not read as a customer group', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [makeTransaction('t1', 'CREDIT', 400, NOW)],
+    });
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      deletedAt: NOW,
+      transactions: [makeTransaction('t2', 'CREDIT', 900, NOW)],
+    });
+    const service = makeService(repo);
+
+    const summary = await service.getDashboardSummary(BUSINESS_ID);
+
+    assert.strictEqual(summary.totalOutstanding, 400);
   });
 
   it('5. empty dashboard', async () => {
@@ -393,18 +415,32 @@ describe('dashboard service - transaction type isolation', () => {
     });
   });
 
-  it('SALE and EXPENSE do not affect totalOutstanding', async () => {
+  it('cash SALE and EXPENSE do not affect totalOutstanding', async () => {
     const repo = new InMemoryDashboardRepository();
     repo.groups.push({
       businessId: BUSINESS_ID,
       transactions: [
-        makeTransaction('s', 'SALE', 1000, NOW),
+        makeTransaction('s', 'SALE', 1000, NOW, { saleMode: 'CASH' }),
         makeTransaction('e', 'EXPENSE', 500, NOW),
       ],
     });
     const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
 
     assert.strictEqual(summary.totalOutstanding, 0);
+  });
+
+  it('credit SALE contributes to totalOutstanding', async () => {
+    const repo = new InMemoryDashboardRepository();
+    repo.groups.push({
+      businessId: BUSINESS_ID,
+      transactions: [
+        makeTransaction('s', 'SALE', 1000, NOW, { saleMode: 'CREDIT' }),
+        makeTransaction('cash', 'SALE', 500, NOW, { saleMode: 'CASH' }),
+      ],
+    });
+    const summary = await makeService(repo).getDashboardSummary(BUSINESS_ID);
+
+    assert.strictEqual(summary.totalOutstanding, 1000);
   });
 });
 

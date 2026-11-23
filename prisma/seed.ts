@@ -1,132 +1,65 @@
-import { PrismaClient, type Role } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { hashPassword } from '../backend/src/services/auth/passwordService.js';
 
 const prisma = new PrismaClient();
 
+const SEED_USER_EMAIL = 'shopkeeper@hisabnaki.local';
+const SEED_USER_NAME = 'Demo Shopkeeper';
+const SEED_BUSINESS_ID = 'hisabnaki-demo-business';
+const SEED_BUSINESS_NAME = 'Raju General Store';
+const SEED_OWNER_MEMBERSHIP_ID = 'hisabnaki-demo-membership-owner';
+
 const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'demo-password';
 
-const businesses = [
-  {
-    id: 'seed-business-1',
-    name: 'Raju General Store',
-    owner: {
-      id: 'seed-user-1',
-      name: 'Demo Shopkeeper',
-      email: 'shopkeeper@hisabnaki.local',
-      phone: '9000000001',
-    },
-    customers: [
-      { id: 'seed-customer-1', name: 'Raju Sharma', phone: '9876543210', credit: 450, payment: 200 },
-      { id: 'seed-customer-2', name: 'Amit Kumar', phone: '9876543211', credit: 700, payment: 300 },
-      { id: 'seed-customer-3', name: 'Neha Verma', phone: '9876543212', credit: 850, payment: 250 },
-      { id: 'seed-customer-4', name: 'Suresh Gupta', phone: '9876543213', credit: 600, payment: 150 },
-    ],
-  },
-  {
-    id: 'seed-business-2',
-    name: 'Neha Traders',
-    owner: {
-      id: 'seed-user-2',
-      name: 'Neha Traders Owner',
-      email: 'owner@nehratraders.local',
-      phone: '9000000002',
-    },
-    customers: [
-      { id: 'seed-customer-5', name: 'Raju Sharma', phone: '9876543220', credit: 300, payment: 50 },
-    ],
-  },
+const demoCustomers = [
+  { id: 'hisabnaki-demo-cust-raju-sharma', name: 'Raju Sharma', phone: '9876543210', credit: 450, payment: 200 },
+  { id: 'hisabnaki-demo-cust-amit-kumar', name: 'Amit Kumar', phone: '9876543211', credit: 700, payment: 300 },
+  { id: 'hisabnaki-demo-cust-neha-verma', name: 'Neha Verma', phone: '9876543212', credit: 850, payment: 250 },
+  { id: 'hisabnaki-demo-cust-suresh-gupta', name: 'Suresh Gupta', phone: '9876543213', credit: 600, payment: 150 },
 ];
 
-async function ensureUser(user: { id: string; name: string; email: string; phone: string }, passwordHash: string) {
-  return prisma.user.upsert({
-    where: { id: user.id },
-    update: {
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      passwordHash,
-    },
-    create: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      passwordHash,
-    },
-  });
-}
-
-async function ensureBusiness(businessId: string, name: string) {
-  return prisma.business.upsert({
-    where: { id: businessId },
-    update: { name, deletedAt: null },
-    create: { id: businessId, name },
-  });
-}
-
-async function ensureMembership(userId: string, businessId: string, role: Role) {
-  const existing = await prisma.membership.findFirst({
-    where: { userId, businessId },
-  });
-  if (existing) {
-    return prisma.membership.update({
-      where: { id: existing.id },
-      data: { role, status: 'ACTIVE' },
-    });
-  }
-  return prisma.membership.create({
-    data: { userId, businessId, role, status: 'ACTIVE' },
-  });
-}
-
-async function ensureCustomer(
-  customer: { id: string; name: string; phone: string },
-  businessId: string,
-  createdByUserId: string
-) {
-  return prisma.customer.upsert({
-    where: { id: customer.id },
-    update: {
-      businessId,
-      name: customer.name,
-      phone: customer.phone,
-      deletedAt: null,
-    },
-    create: {
-      id: customer.id,
-      businessId,
-      name: customer.name,
-      phone: customer.phone,
-      createdByUserId,
-    },
-  });
-}
-
 async function ensureTransaction(
-  businessId: string,
-  customerId: string,
-  createdByUserId: string,
-  type: 'CREDIT' | 'PAYMENT',
-  amount: number,
-  description: string,
-  key: string
-) {
-  const existing = await prisma.transaction.findFirst({
-    where: { businessId, idempotencyKey: key },
-  });
-  if (existing) {
-    return existing;
+  tx: Prisma.TransactionClient,
+  input: {
+    id: string;
+    businessId: string;
+    customerId: string;
+    createdByUserId: string;
+    type: 'CREDIT' | 'PAYMENT';
+    amount: number;
+    description: string;
+    paymentMethod?: 'CASH';
   }
-  return prisma.transaction.create({
+) {
+  const existingById = await tx.transaction.findUnique({
+    where: { id: input.id },
+    select: { id: true },
+  });
+  if (existingById) {
+    return;
+  }
+
+  const idempotencyKey = `seed:${input.businessId}:${input.id}`;
+  const existingByKey = await tx.transaction.findFirst({
+    where: { businessId: input.businessId, idempotencyKey },
+    select: { id: true },
+  });
+  if (existingByKey) {
+    return;
+  }
+
+  await tx.transaction.create({
     data: {
-      businessId,
-      customerId,
-      createdByUserId,
-      type,
-      amount,
-      description,
+      id: input.id,
+      businessId: input.businessId,
+      customerId: input.customerId,
+      createdByUserId: input.createdByUserId,
+      type: input.type,
       status: 'ACTIVE',
-      idempotencyKey: key,
+      amount: input.amount,
+      description: input.description,
+      paymentMethod: input.paymentMethod,
+      idempotencyKey,
     },
   });
 }
@@ -134,36 +67,85 @@ async function ensureTransaction(
 async function main() {
   const passwordHash = await hashPassword(DEMO_PASSWORD);
 
-  for (const business of businesses) {
-    const user = await ensureUser(business.owner, passwordHash);
-    await ensureBusiness(business.id, business.name);
-    await ensureMembership(user.id, business.id, 'OWNER');
+  await prisma.$transaction(
+    async (tx) => {
+      const user = await tx.user.upsert({
+        where: { email: SEED_USER_EMAIL },
+        update: { name: SEED_USER_NAME, passwordHash },
+        create: {
+          name: SEED_USER_NAME,
+          email: SEED_USER_EMAIL,
+          passwordHash,
+        },
+      });
 
-    for (const customer of business.customers) {
-      const created = await ensureCustomer(customer, business.id, user.id);
-      await ensureTransaction(
-        business.id,
-        created.id,
-        user.id,
-        'CREDIT',
-        customer.credit,
-        'Udhaar',
-        `seed:${business.id}:${customer.id}:credit`
-      );
-      await ensureTransaction(
-        business.id,
-        created.id,
-        user.id,
-        'PAYMENT',
-        customer.payment,
-        'Payment received',
-        `seed:${business.id}:${customer.id}:payment`
-      );
-    }
-  }
+      await tx.business.upsert({
+        where: { id: SEED_BUSINESS_ID },
+        update: { name: SEED_BUSINESS_NAME, deletedAt: null },
+        create: { id: SEED_BUSINESS_ID, name: SEED_BUSINESS_NAME },
+      });
+
+      await tx.membership.upsert({
+        where: {
+          businessId_userId: {
+            businessId: SEED_BUSINESS_ID,
+            userId: user.id,
+          },
+        },
+        update: { role: 'OWNER', status: 'ACTIVE' },
+        create: {
+          id: SEED_OWNER_MEMBERSHIP_ID,
+          businessId: SEED_BUSINESS_ID,
+          userId: user.id,
+          role: 'OWNER',
+          status: 'ACTIVE',
+        },
+      });
+
+      for (const customer of demoCustomers) {
+        await tx.customer.upsert({
+          where: { id: customer.id },
+          update: {
+            name: customer.name,
+            phone: customer.phone,
+            deletedAt: null,
+          },
+          create: {
+            id: customer.id,
+            businessId: SEED_BUSINESS_ID,
+            name: customer.name,
+            phone: customer.phone,
+            createdByUserId: user.id,
+          },
+        });
+
+        await ensureTransaction(tx, {
+          id: `${customer.id}-credit`,
+          businessId: SEED_BUSINESS_ID,
+          customerId: customer.id,
+          createdByUserId: user.id,
+          type: 'CREDIT',
+          amount: customer.credit,
+          description: 'Udhaar',
+        });
+
+        await ensureTransaction(tx, {
+          id: `${customer.id}-payment`,
+          businessId: SEED_BUSINESS_ID,
+          customerId: customer.id,
+          createdByUserId: user.id,
+          type: 'PAYMENT',
+          amount: customer.payment,
+          description: 'Payment received',
+          paymentMethod: 'CASH',
+        });
+      }
+    },
+    { timeout: 60000 }
+  );
 
   console.log('Demo multi-business data seeded successfully.');
-  console.log(`Demo login password: ${DEMO_PASSWORD} (development only; set SEED_PASSWORD to override).`);
+  console.log('Demo login password is controlled by SEED_PASSWORD (development only).');
 }
 
 main()

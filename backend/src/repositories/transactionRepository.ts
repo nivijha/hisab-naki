@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 import type {
   Customer,
+  OpeningBalanceDirection,
+  PaymentMethod,
   PrismaClient,
+  SaleMode,
   Transaction,
   TransactionType,
 } from '@prisma/client';
@@ -12,10 +15,14 @@ export type TransactionWithCustomer = Transaction & { customer: Customer | null 
 export type CreateTransactionRecordInput = {
   businessId: string;
   createdByUserId: string;
-  customerId: string;
+  customerId?: string | null;
   type: TransactionType;
   amount: Prisma.Decimal | number;
   description: string;
+  saleMode?: SaleMode | null;
+  paymentMethod?: PaymentMethod | null;
+  openingDirection?: OpeningBalanceDirection | null;
+  originalTransactionId?: string | null;
   idempotencyKey?: string;
 };
 
@@ -65,10 +72,15 @@ export class PrismaTransactionRepository implements TransactionRepository {
       data: {
         businessId: input.businessId,
         createdByUserId: input.createdByUserId,
-        customerId: input.customerId,
+        customerId: input.customerId ?? null,
         type: input.type,
         amount: input.amount,
         description: input.description,
+        saleMode: input.saleMode ?? null,
+        paymentMethod: input.paymentMethod ?? null,
+        openingDirection: input.openingDirection ?? null,
+        originalTransactionId: input.originalTransactionId ?? null,
+        idempotencyKey: input.idempotencyKey,
       },
       include: {
         customer: true,
@@ -102,10 +114,14 @@ export class PrismaTransactionRepository implements TransactionRepository {
           data: {
             businessId: input.businessId,
             createdByUserId: input.createdByUserId,
-            customerId: input.customerId,
+            customerId: input.customerId ?? null,
             type: input.type,
             amount: input.amount,
             description: input.description,
+            saleMode: input.saleMode ?? null,
+            paymentMethod: input.paymentMethod ?? null,
+            openingDirection: input.openingDirection ?? null,
+            originalTransactionId: input.originalTransactionId ?? null,
             idempotencyKey: key,
           },
           include: { customer: true },
@@ -159,7 +175,7 @@ export class PrismaTransactionRepository implements TransactionRepository {
 
   async listCustomerTransactionGroups(businessId: string): Promise<CustomerTransactionGroup[]> {
     return this.client.customer.findMany({
-      where: { businessId },
+      where: { businessId, deletedAt: null },
       include: {
         transactions: { where: { status: 'ACTIVE' } },
       },

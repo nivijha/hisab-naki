@@ -4,26 +4,43 @@ import type { Transaction } from '@prisma/client';
 type OutstandingTransaction = {
   type: Transaction['type'];
   amount: Transaction['amount'] | number;
+  status?: Transaction['status'];
+  saleMode?: Transaction['saleMode'];
+  openingDirection?: Transaction['openingDirection'];
 };
 
 export function calculateOutstandingAmount(
   transactions: OutstandingTransaction[]
 ): Prisma.Decimal {
   return transactions.reduce<Prisma.Decimal>((total, transaction) => {
+    if (transaction.status !== undefined && transaction.status !== 'ACTIVE') {
+      return total;
+    }
+
     const amount =
       typeof transaction.amount === 'number'
         ? new Prisma.Decimal(transaction.amount)
         : transaction.amount;
 
-    if (transaction.type === 'CREDIT') {
-      return total.plus(amount);
+    switch (transaction.type) {
+      case 'CREDIT':
+        return total.plus(amount);
+      case 'PAYMENT':
+        return total.minus(amount);
+      case 'SALE':
+        return transaction.saleMode === 'CASH' ? total : total.plus(amount);
+      case 'OPENING_BALANCE':
+        return transaction.openingDirection === 'INCREASE'
+          ? total.plus(amount)
+          : total.minus(amount);
+      case 'SALE_RETURN':
+        return total.minus(amount);
+      case 'REFUND':
+        return total.plus(amount);
+      case 'EXPENSE':
+      default:
+        return total;
     }
-
-    if (transaction.type === 'PAYMENT') {
-      return total.minus(amount);
-    }
-
-    return total;
   }, new Prisma.Decimal(0));
 }
 

@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { Prisma } from '@prisma/client';
 import type { Customer, Transaction } from '@prisma/client';
 import { createCustomerService } from '../../../services/ledger/customerService.js';
+import { calculateOutstandingAmount } from '../../../utils/ledger.js';
 import type {
   CreateCustomerInput,
   CustomerRepository,
@@ -34,9 +35,10 @@ function makeCustomer(overrides: Partial<Customer> = {}): Customer {
 
 function makeTransaction(
   id: string,
-  type: 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE',
+  type: Transaction['type'],
   amount: number | string,
-  customerId = 'c-1'
+  customerId = 'c-1',
+  overrides: Partial<Transaction> = {}
 ): Transaction {
   return {
     id,
@@ -58,6 +60,7 @@ function makeTransaction(
     voidReason: null,
     originalTransactionId: null,
     idempotencyKey: null,
+    ...overrides,
   };
 }
 
@@ -85,7 +88,7 @@ class InMemoryCustomerRepository implements CustomerRepository {
     data: UpdateCustomerData
   ): Promise<Customer | null> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.businessId !== businessId) return null;
+    if (!customer || customer.businessId !== businessId || customer.deletedAt !== null) return null;
     const updated: Customer = {
       ...customer,
       ...(data.name !== undefined ? { name: data.name } : {}),
@@ -97,18 +100,16 @@ class InMemoryCustomerRepository implements CustomerRepository {
 
   async delete(businessId: string, customerId: string): Promise<DeleteCustomerOutcome> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.businessId !== businessId) return { status: 'NOT_FOUND' };
-    if ((this.transactions.get(customerId) ?? []).length > 0) {
-      return { status: 'HAS_TRANSACTIONS' };
+    if (!customer || customer.businessId !== businessId || customer.deletedAt !== null) {
+      return { status: 'NOT_FOUND' };
     }
-    this.customers.delete(customerId);
-    this.transactions.delete(customerId);
+    this.customers.set(customerId, { ...customer, deletedAt: new Date() });
     return { status: 'DELETED' };
   }
 
   async findById(businessId: string, customerId: string): Promise<CustomerWithTransactions | null> {
     const customer = this.customers.get(customerId);
-    if (!customer || customer.businessId !== businessId) return null;
+    if (!customer || customer.businessId !== businessId || customer.deletedAt !== null) return null;
     return { ...customer, transactions: this.transactions.get(customerId) ?? [] };
   }
 
@@ -124,7 +125,7 @@ class InMemoryCustomerRepository implements CustomerRepository {
 
   async listForBusiness(businessId: string): Promise<CustomerWithTransactions[]> {
     return [...this.customers.values()]
-      .filter((c) => c.businessId === businessId)
+      .filter((c) => c.businessId === businessId && c.deletedAt === null)
       .reverse()
       .map((c) => ({ ...c, transactions: this.transactions.get(c.id) ?? [] }));
   }
@@ -132,7 +133,11 @@ class InMemoryCustomerRepository implements CustomerRepository {
   private findByCaseInsensitiveName(businessId: string, name: string): Customer | null {
     const lower = name.toLowerCase();
     for (const customer of this.customers.values()) {
-      if (customer.businessId === businessId && customer.name.toLowerCase() === lower) {
+      if (
+        customer.businessId === businessId &&
+        customer.deletedAt === null &&
+        customer.name.toLowerCase() === lower
+      ) {
         return customer;
       }
     }
@@ -474,7 +479,7 @@ describe('customer service - outstanding balances', () => {
     repo.transactions.set(created.id, [
       makeTransaction('t1', 'CREDIT', 450),
       makeTransaction('t2', 'PAYMENT', 200),
-      makeTransaction('t3', 'SALE', 1000),
+      makeTransaction('t3', 'SALE', 1000, 'c-1', { saleMode: 'CASH' }),
       makeTransaction('t4', 'EXPENSE', 500),
     ]);
 
@@ -508,10 +513,81 @@ describe('customer service - outstanding balances', () => {
     assert.strictEqual(typeof customer.outstandingBalance, 'number');
     assert.strictEqual(customer.outstandingBalance, -200);
   });
+
+  it('credit SALE increases outstanding and cash SALE does not', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'SALE', 1000, 'c-1', { saleMode: 'CREDIT' }),
+      makeTransaction('t2', 'SALE', 2500, 'c-1', { saleMode: 'CASH' }),
+    ]);
+
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.ok(customer);
+    assert.strictEqual(customer.outstandingBalance, 1000);
+  });
+
+  it('EXPENSE and VOIDED transactions do not affect outstanding', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'CREDIT', 500),
+      makeTransaction('t2', 'EXPENSE', 300),
+      makeTransaction('t3', 'CREDIT', 900, 'c-1', { status: 'VOIDED' }),
+      makeTransaction('t4', 'SALE', 700, 'c-1', { saleMode: 'CREDIT', status: 'VOIDED' }),
+      makeTransaction('t5', 'PAYMENT', 100, 'c-1', { status: 'VOIDED' }),
+    ]);
+
+    const customer = await service.getCustomerById(BUSINESS_ID, created.id);
+    assert.ok(customer);
+    assert.strictEqual(customer.outstandingBalance, 500);
+  });
+
+  it('customer list and detail return the same SQL-aligned balance', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(created.id, [
+      makeTransaction('t1', 'CREDIT', '100.50'),
+      makeTransaction('t2', 'PAYMENT', '25.25'),
+      makeTransaction('t3', 'SALE', '10.10', 'c-1', { saleMode: 'CREDIT' }),
+      makeTransaction('t4', 'SALE', '999.99', 'c-1', { saleMode: 'CASH' }),
+      makeTransaction('t5', 'EXPENSE', '888.88'),
+      makeTransaction('t6', 'OPENING_BALANCE', '0.01', 'c-1', {
+        openingDirection: 'INCREASE',
+      }),
+      makeTransaction('t7', 'OPENING_BALANCE', '0.02', 'c-1', {
+        openingDirection: 'DECREASE',
+      }),
+      makeTransaction('t8', 'SALE_RETURN', '0.03'),
+      makeTransaction('t9', 'REFUND', '0.04'),
+      makeTransaction('t10', 'CREDIT', '500', 'c-1', { status: 'VOIDED' }),
+    ]);
+
+    const listed = await service.getCustomersForBusiness(BUSINESS_ID);
+    const detail = await service.getCustomerById(BUSINESS_ID, created.id);
+
+    assert.ok(detail);
+    assert.strictEqual(listed[0].outstandingBalance, 85.35);
+    assert.strictEqual(detail.outstandingBalance, listed[0].outstandingBalance);
+  });
+
+  it('empty transaction history produces a zero outstanding balance', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+
+    const detail = await service.getCustomerById(BUSINESS_ID, created.id);
+
+    assert.ok(detail);
+    assert.strictEqual(detail.outstandingBalance, 0);
+  });
 });
 
 describe('customer service - business-scoped deleteCustomer', () => {
-  it('1. successful deletion without transactions', async () => {
+  it('1. successful soft deletion preserves the row and hides the customer', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
     const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
@@ -519,28 +595,46 @@ describe('customer service - business-scoped deleteCustomer', () => {
     const result = await service.deleteCustomer(BUSINESS_ID, created.id);
 
     assert.strictEqual(result.ok, true);
-    assert.strictEqual(repo.customers.has(created.id), false);
+    assert.strictEqual(repo.customers.has(created.id), true);
+    assert.ok(repo.customers.get(created.id)?.deletedAt instanceof Date);
     assert.strictEqual(await service.getCustomerById(BUSINESS_ID, created.id), null);
+    assert.strictEqual((await service.getCustomersForBusiness(BUSINESS_ID)).length, 0);
   });
 
-  it('2. deletion blocked when transactions exist', async () => {
+  it('2. soft deletion succeeds with transactions and preserves historical rows', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
     const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
     repo.transactions.set(created.id, [makeTransaction('t-1', 'CREDIT', 500)]);
 
+    const beforeDelete = await service.getCustomerById(BUSINESS_ID, created.id);
     const result = await service.deleteCustomer(BUSINESS_ID, created.id);
 
-    assert.strictEqual(result.ok, false);
-    if (!result.ok) {
-      assert.strictEqual(result.code, 'HAS_TRANSACTIONS');
-      assert.match(result.message, /transaction history/);
-    }
-    assert.strictEqual(repo.customers.has(created.id), true);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(beforeDelete?.outstandingBalance, 500);
     assert.strictEqual(repo.transactions.get(created.id)?.length, 1);
+    assert.strictEqual(
+      calculateOutstandingAmount(repo.transactions.get(created.id) ?? []).toString(),
+      '500'
+    );
   });
 
-  it('3. customer not found', async () => {
+  it('3. repeated deletion returns NOT_FOUND without changing the timestamp', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+
+    const first = await service.deleteCustomer(BUSINESS_ID, created.id);
+    const deletedAt = repo.customers.get(created.id)?.deletedAt;
+    const second = await service.deleteCustomer(BUSINESS_ID, created.id);
+
+    assert.strictEqual(first.ok, true);
+    assert.strictEqual(second.ok, false);
+    if (!second.ok) assert.strictEqual(second.code, 'NOT_FOUND');
+    assert.strictEqual(repo.customers.get(created.id)?.deletedAt, deletedAt);
+  });
+
+  it('4. customer not found', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
@@ -553,7 +647,7 @@ describe('customer service - business-scoped deleteCustomer', () => {
     }
   });
 
-  it('4. customer belonging to another business cannot be deleted', async () => {
+  it('5. customer belonging to another business cannot be deleted', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
     const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
@@ -562,10 +656,10 @@ describe('customer service - business-scoped deleteCustomer', () => {
 
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'NOT_FOUND');
-    assert.strictEqual(repo.customers.has(created.id), true);
+    assert.strictEqual(repo.customers.get(created.id)?.deletedAt, null);
   });
 
-  it('5. repository errors propagate correctly', async () => {
+  it('6. repository errors propagate correctly', async () => {
     const failingRepo: CustomerRepository = {
       create: async () => { throw new Error('DB down'); },
       update: async () => { throw new Error('DB down'); },
@@ -580,7 +674,7 @@ describe('customer service - business-scoped deleteCustomer', () => {
     await assert.rejects(() => service.deleteCustomer(BUSINESS_ID, 'c-1'), /DB down/);
   });
 
-  it('6. existing customer operations continue working', async () => {
+  it('7. existing customer operations continue working', async () => {
     const repo = new InMemoryCustomerRepository();
     const service = createCustomerService(repo);
 
@@ -595,5 +689,38 @@ describe('customer service - business-scoped deleteCustomer', () => {
 
     assert.strictEqual((await service.getCustomersForBusiness(BUSINESS_ID)).length, 0);
     assert.strictEqual(await service.getCustomerByName(BUSINESS_ID, 'Raju Sharma'), null);
+  });
+
+  it('8. name resolution after deletion creates a new active customer instead of reviving the deleted one', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const original = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+    repo.transactions.set(original.id, [makeTransaction('t-1', 'CREDIT', 500)]);
+
+    const removed = await service.deleteCustomer(BUSINESS_ID, original.id);
+    const replacement = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+
+    assert.strictEqual(removed.ok, true);
+    assert.notStrictEqual(replacement.id, original.id);
+    assert.strictEqual(replacement.deletedAt, null);
+    assert.strictEqual(repo.customers.get(original.id)?.deletedAt !== null, true);
+    assert.strictEqual((await service.getCustomerById(BUSINESS_ID, original.id)), null);
+
+    const resolved = await service.getCustomerByName(BUSINESS_ID, 'Raju');
+    assert.strictEqual(resolved?.id, replacement.id);
+    assert.strictEqual(resolved?.outstandingBalance, 0);
+  });
+
+  it('9. deleted customers cannot be updated', async () => {
+    const repo = new InMemoryCustomerRepository();
+    const service = createCustomerService(repo);
+    const created = await service.ensureCustomer(BUSINESS_ID, CREATOR_ID, 'Raju');
+
+    await service.deleteCustomer(BUSINESS_ID, created.id);
+    const result = await service.updateCustomer(BUSINESS_ID, created.id, { name: 'Amit' });
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) assert.strictEqual(result.code, 'NOT_FOUND');
+    assert.strictEqual(repo.customers.get(created.id)?.name, 'Raju');
   });
 });

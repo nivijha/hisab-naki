@@ -117,10 +117,7 @@ export function createCustomerController(services: CustomerControllerServices = 
       const result = await services.deleteCustomer(businessId, customerId);
 
       if (!result.ok) {
-        if (result.code === 'NOT_FOUND') {
-          return res.status(404).json({ ok: false, message: result.message });
-        }
-        return res.status(409).json({ ok: false, message: result.message });
+        return res.status(404).json({ ok: false, message: result.message });
       }
 
       return res.json({ ok: true, data: { id: customerId } });

@@ -83,6 +83,64 @@ describe('transaction controller - tenant context', () => {
     assert.strictEqual(input.createdByUserId, 'user-1');
   });
 
+  it('creation passes conditional transaction fields and supports EXPENSE without a customer', async () => {
+    const { services, calls } = makeServices();
+    const controller = createTransactionController(services);
+
+    const saleRes = makeRes();
+    await controller.createTransactionHandler(
+      makeReq({
+        auth: TEST_AUTH,
+        body: {
+          customerId: 'c-1',
+          customerName: 'Raju',
+          amount: 1000,
+          type: 'SALE',
+          saleMode: 'CASH',
+          paymentMethod: 'UPI',
+          idempotencyKey: 'key-1',
+        },
+      }),
+      saleRes
+    );
+
+    assert.strictEqual(saleRes.statusCode, 201);
+    const saleInput = calls.createTransaction[0][0] as Record<string, unknown>;
+    assert.strictEqual(saleInput.customerId, 'c-1');
+    assert.strictEqual(saleInput.customerName, 'Raju');
+    assert.strictEqual(saleInput.saleMode, 'CASH');
+    assert.strictEqual(saleInput.paymentMethod, 'UPI');
+    assert.strictEqual(saleInput.idempotencyKey, 'key-1');
+
+    const expenseServices = {
+      ...makeServices().services,
+      createTransaction: async (...args: unknown[]) => {
+        calls.createTransaction.push(args);
+        return { transaction: { customerId: null }, customer: null, outstandingBalance: 0 };
+      },
+    } as unknown as TransactionControllerServices;
+    const expenseController = createTransactionController(expenseServices);
+    const expenseRes = makeRes();
+
+    await expenseController.createTransactionHandler(
+      makeReq({
+        auth: TEST_AUTH,
+        body: { amount: 250, type: 'EXPENSE', paymentMethod: 'CASH' },
+      }),
+      expenseRes
+    );
+
+    assert.strictEqual(expenseRes.statusCode, 201);
+    const expenseInput = calls.createTransaction[1][0] as Record<string, unknown>;
+    assert.strictEqual(expenseInput.customerName, undefined);
+    assert.strictEqual(expenseInput.customerId, undefined);
+    assert.strictEqual(expenseInput.paymentMethod, 'CASH');
+    assert.strictEqual(
+      (expenseRes.body as { responseText: string }).responseText,
+      'EXPENSE recorded.'
+    );
+  });
+
   it('balance and total outstanding intents use authenticated businessId', async () => {
     const { services, calls } = makeServices();
     const controller = createTransactionController(services);
