@@ -30,7 +30,14 @@ import {
   getCustomerByName,
 } from './customerService.js';
 
-export type TransactionCreateType = 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
+export type TransactionCreateType =
+  | 'CREDIT'
+  | 'PAYMENT'
+  | 'SALE'
+  | 'EXPENSE'
+  | 'OPENING_BALANCE'
+  | 'SALE_RETURN'
+  | 'REFUND';
 
 export type CreateTransactionInput = {
   businessId: string;
@@ -73,6 +80,9 @@ const SUPPORTED_TYPES: readonly TransactionCreateType[] = [
   'PAYMENT',
   'SALE',
   'EXPENSE',
+  'OPENING_BALANCE',
+  'SALE_RETURN',
+  'REFUND',
 ];
 const PAYMENT_METHODS: readonly PaymentMethod[] = ['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER'];
 const SALE_MODES: readonly SaleMode[] = ['CASH', 'CREDIT'];
@@ -108,7 +118,7 @@ function validateCreateInput(input: CreateTransactionInput): void {
     throw new HttpError(400, 'Unsupported transaction type.');
   }
 
-  if (input.openingDirection != null) {
+  if (input.openingDirection != null && input.type !== 'OPENING_BALANCE') {
     throw new HttpError(400, 'Opening balance transactions are not supported by this endpoint.');
   }
 
@@ -116,8 +126,13 @@ function validateCreateInput(input: CreateTransactionInput): void {
     throw new HttpError(400, 'Linked transactions are not supported by this endpoint.');
   }
 
-  if (input.saleMode != null && !SALE_MODES.includes(input.saleMode)) {
-    throw new HttpError(400, 'Invalid sale mode.');
+  if (input.saleMode != null) {
+    if (input.type !== 'SALE') {
+      throw new HttpError(400, 'saleMode is only valid for SALE transactions.');
+    }
+    if (!SALE_MODES.includes(input.saleMode)) {
+      throw new HttpError(400, 'Invalid sale mode.');
+    }
   }
 
   if (input.paymentMethod != null && !PAYMENT_METHODS.includes(input.paymentMethod)) {
@@ -128,12 +143,42 @@ function validateCreateInput(input: CreateTransactionInput): void {
     normalizeCustomerId(input.customerId) || normalizeOptionalText(input.customerName)
   );
 
+  if (input.type === 'OPENING_BALANCE') {
+    if (!hasCustomer) {
+      throw new HttpError(400, 'Customer name or customer ID is required for OPENING_BALANCE.');
+    }
+    if (input.openingDirection == null) {
+      throw new HttpError(400, 'Required for OPENING_BALANCE transactions.');
+    }
+    if (!['INCREASE', 'DECREASE'].includes(input.openingDirection)) {
+      throw new HttpError(400, 'Invalid opening direction.');
+    }
+    if (input.paymentMethod != null) {
+      throw new HttpError(400, 'paymentMethod is not valid for OPENING_BALANCE transactions.');
+    }
+    return;
+  }
+
+  if (input.type === 'SALE_RETURN') {
+    if (!hasCustomer) {
+      throw new HttpError(400, 'Customer name or customer ID is required for SALE_RETURN.');
+    }
+    if (input.paymentMethod != null) {
+      throw new HttpError(400, 'paymentMethod is not valid for SALE_RETURN transactions.');
+    }
+    return;
+  }
+
+  if (input.type === 'REFUND') {
+    if (input.paymentMethod != null) {
+      throw new HttpError(400, 'paymentMethod is not valid for REFUND transactions.');
+    }
+    return;
+  }
+
   if (input.type === 'CREDIT') {
     if (!hasCustomer) {
       throw new HttpError(400, 'Customer name or customer ID is required for CREDIT.');
-    }
-    if (input.saleMode != null) {
-      throw new HttpError(400, 'saleMode is only valid for SALE transactions.');
     }
     if (input.paymentMethod != null) {
       throw new HttpError(400, 'paymentMethod is not valid for CREDIT transactions.');
@@ -144,9 +189,6 @@ function validateCreateInput(input: CreateTransactionInput): void {
   if (input.type === 'PAYMENT') {
     if (!hasCustomer) {
       throw new HttpError(400, 'Customer name or customer ID is required for PAYMENT.');
-    }
-    if (input.saleMode != null) {
-      throw new HttpError(400, 'saleMode is only valid for SALE transactions.');
     }
     if (input.paymentMethod == null) {
       throw new HttpError(400, 'paymentMethod is required for PAYMENT.');
@@ -176,9 +218,6 @@ function validateCreateInput(input: CreateTransactionInput): void {
 
   if (hasCustomer) {
     throw new HttpError(400, 'EXPENSE does not accept a customer.');
-  }
-  if (input.saleMode != null) {
-    throw new HttpError(400, 'saleMode is only valid for SALE transactions.');
   }
   if (input.paymentMethod == null) {
     throw new HttpError(400, 'paymentMethod is required for EXPENSE.');
@@ -383,7 +422,7 @@ export function createTransactionService(
       description: input.description ?? 'Ledger update',
       saleMode: input.saleMode ?? null,
       paymentMethod: input.paymentMethod ?? null,
-      openingDirection: null,
+      openingDirection: input.openingDirection ?? null,
       originalTransactionId: null,
       idempotencyKey: input.idempotencyKey,
     });

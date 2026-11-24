@@ -366,6 +366,180 @@ describe('transaction service - creation', () => {
     assert.strictEqual(cashSale.outstandingBalance, 1000);
   });
 
+  it('CREDIT 450.75 followed by PAYMENT 100.50 leaves 350.25 outstanding', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const credit = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 450.75,
+      type: 'CREDIT',
+    });
+    assert.strictEqual(credit.outstandingBalance, 450.75);
+
+    const payment = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 100.50,
+      type: 'PAYMENT',
+      paymentMethod: 'CASH',
+    });
+    assert.strictEqual(payment.outstandingBalance, 350.25);
+  });
+
+  it('OPENING_BALANCE INCREASE raises the customer outstanding balance', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 500,
+      type: 'OPENING_BALANCE',
+      openingDirection: 'INCREASE',
+    });
+    assert.strictEqual(result.transaction.type, 'OPENING_BALANCE');
+    assert.strictEqual(result.outstandingBalance, 500);
+  });
+
+  it('OPENING_BALANCE DECREASE lowers the customer outstanding balance', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const result = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 500,
+      type: 'OPENING_BALANCE',
+      openingDirection: 'DECREASE',
+    });
+    assert.strictEqual(result.outstandingBalance, -500);
+  });
+
+  it('rejects OPENING_BALANCE without a customer', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        amount: 500,
+        type: 'OPENING_BALANCE',
+        openingDirection: 'INCREASE',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 400);
+        assert.match(error.message, /Customer name or customer ID is required for OPENING_BALANCE/);
+        return true;
+      }
+    );
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('SALE_RETURN reduces the customer outstanding balance', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const credit = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 200,
+      type: 'CREDIT',
+    });
+    assert.strictEqual(credit.outstandingBalance, 200);
+
+    const saleReturn = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 50,
+      type: 'SALE_RETURN',
+    });
+    assert.strictEqual(saleReturn.outstandingBalance, 150);
+  });
+
+  it('REFUND increases the customer outstanding balance', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    const credit = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 200,
+      type: 'CREDIT',
+    });
+    assert.strictEqual(credit.outstandingBalance, 200);
+
+    const refund = await service.createTransaction({
+      businessId: BUSINESS_ID,
+      createdByUserId: CREATOR_ID,
+      customerName: 'Raju',
+      amount: 50,
+      type: 'REFUND',
+    });
+    assert.strictEqual(refund.outstandingBalance, 250);
+  });
+
+  it('rejects SALE_RETURN without a customer', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        amount: 100,
+        type: 'SALE_RETURN',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 400);
+        assert.match(error.message, /Customer name or customer ID is required for SALE_RETURN/);
+        return true;
+      }
+    );
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
+  it('rejects OPENING_BALANCE without a direction', async () => {
+    const repo = new InMemoryTransactionRepository([makeCustomer()]);
+    const { gateway } = makeGateway(repo);
+    const service = createTransactionService(repo, gateway);
+
+    await assert.rejects(
+      () => service.createTransaction({
+        businessId: BUSINESS_ID,
+        createdByUserId: CREATOR_ID,
+        customerName: 'Raju',
+        amount: 100,
+        type: 'OPENING_BALANCE',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.strictEqual(error.statusCode, 400);
+        assert.match(error.message, /Required for OPENING_BALANCE/);
+        return true;
+      }
+    );
+    assert.strictEqual(repo.rows.length, 0);
+  });
+
   it('customer not found is rejected', async () => {
     const repo = new InMemoryTransactionRepository();
     const { gateway } = makeGateway(repo);
@@ -1231,6 +1405,17 @@ describe('transaction service - idempotency', () => {
         return true;
       }
     );
+    assert.strictEqual(repo.rows.length, 1);
+  });
+
+  it('idempotency keys are business-scoped at the repository level', async () => {
+    const { repo, service } = setup();
+    await service.createTransaction(baseInput);
+
+    const row = await repo.findByIdempotencyKey(BUSINESS_ID, 'key-1');
+    assert.ok(row, 'the owning business finds the row');
+    assert.strictEqual(row.businessId, BUSINESS_ID);
+    assert.strictEqual(await repo.findByIdempotencyKey(OTHER_BUSINESS_ID, 'key-1'), null);
     assert.strictEqual(repo.rows.length, 1);
   });
 

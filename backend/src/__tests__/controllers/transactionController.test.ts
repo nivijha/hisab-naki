@@ -141,6 +141,26 @@ describe('transaction controller - tenant context', () => {
     );
   });
 
+  it('creation passes through OPENING_BALANCE and ledger fields', async () => {
+    const { services, calls } = makeServices();
+    const controller = createTransactionController(services);
+    const res = makeRes();
+
+    await controller.createTransactionHandler(
+      makeReq({
+        auth: TEST_AUTH,
+        body: { type: 'OPENING_BALANCE', openingDirection: 'INCREASE', amount: 500 },
+      }),
+      res
+    );
+
+    assert.strictEqual(res.statusCode, 201);
+    const input = calls.createTransaction[0][0] as Record<string, unknown>;
+    assert.strictEqual(input.type, 'OPENING_BALANCE');
+    assert.strictEqual(input.openingDirection, 'INCREASE');
+    assert.strictEqual(input.amount, 500);
+  });
+
   it('balance and total outstanding intents use authenticated businessId', async () => {
     const { services, calls } = makeServices();
     const controller = createTransactionController(services);
