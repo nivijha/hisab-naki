@@ -78,6 +78,20 @@ describe('business routes require authentication', () => {
     });
   });
 
+  it('auth register is public and returns 400 without a valid body', async () => {
+    await withApp((app) => app.use('/api/auth', authRoutes), async (base) => {
+      const res = await fetch(`${base}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      assert.strictEqual(res.status, 400);
+      const payload = await res.json() as { ok: boolean; errors?: unknown[] };
+      assert.strictEqual(payload.ok, false);
+      assert.ok(Array.isArray(payload.errors) && payload.errors.length > 0);
+    });
+  });
+
   it('auth memberships requires token-only auth (401)', async () => {
     await withApp((app) => app.use('/api/auth', authRoutes), async (base) => {
       const res = await fetch(`${base}/api/auth/memberships`);

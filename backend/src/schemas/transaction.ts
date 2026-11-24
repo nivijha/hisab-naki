@@ -16,7 +16,11 @@ const writeIntentToType = {
 
 type ReadIntent = (typeof readIntents)[number];
 type WriteIntent = keyof typeof writeIntentToType;
-type WriteType = (typeof writeIntentToType)[WriteIntent];
+type WriteType =
+  | (typeof writeIntentToType)[WriteIntent]
+  | 'OPENING_BALANCE'
+  | 'SALE_RETURN'
+  | 'REFUND';
 
 function hasAtMostTwoDecimals(value: number): boolean {
   if (!Number.isFinite(value)) return false;
@@ -44,7 +48,15 @@ export const listTransactionsQuerySchema = z.object({
   to: z.coerce.date({ invalid_type_error: 'to must be a valid date.' }).optional(),
 });
 
-const transactionTypeSchema = z.enum(['CREDIT', 'PAYMENT', 'SALE', 'EXPENSE']);
+const transactionTypeSchema = z.enum([
+  'CREDIT',
+  'PAYMENT',
+  'SALE',
+  'EXPENSE',
+  'OPENING_BALANCE',
+  'SALE_RETURN',
+  'REFUND',
+]);
 const saleModeSchema = z.enum(['CASH', 'CREDIT']);
 const paymentMethodSchema = z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'OTHER']);
 const openingDirectionSchema = z.enum(['INCREASE', 'DECREASE']);
@@ -120,14 +132,6 @@ export const createTransactionSchema = z
       });
     }
 
-    if (data.openingDirection) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Opening balance transactions are not supported by this endpoint.',
-        path: ['openingDirection'],
-      });
-    }
-
     if (data.originalTransactionId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -136,7 +140,77 @@ export const createTransactionSchema = z
       });
     }
 
+    if (data.openingDirection && data.type !== 'OPENING_BALANCE') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'openingDirection is only valid for OPENING_BALANCE transactions.',
+        path: ['openingDirection'],
+      });
+    }
+
     if (!type) {
+      return;
+    }
+
+    if (data.saleMode && type !== 'SALE') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'saleMode is only valid for SALE transactions.',
+        path: ['saleMode'],
+      });
+    }
+
+    if (type === 'OPENING_BALANCE') {
+      if (!hasCustomer) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Customer name or customer ID is required for OPENING_BALANCE.',
+          path: ['customerName'],
+        });
+      }
+      if (!data.openingDirection) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Required for OPENING_BALANCE transactions.',
+          path: ['openingDirection'],
+        });
+      }
+      if (data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is not valid for OPENING_BALANCE transactions.',
+          path: ['paymentMethod'],
+        });
+      }
+      return;
+    }
+
+    if (type === 'SALE_RETURN') {
+      if (!hasCustomer) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Customer name or customer ID is required for SALE_RETURN.',
+          path: ['customerName'],
+        });
+      }
+      if (data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is not valid for SALE_RETURN transactions.',
+          path: ['paymentMethod'],
+        });
+      }
+      return;
+    }
+
+    if (type === 'REFUND') {
+      if (data.paymentMethod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'paymentMethod is not valid for REFUND transactions.',
+          path: ['paymentMethod'],
+        });
+      }
       return;
     }
 
@@ -146,13 +220,6 @@ export const createTransactionSchema = z
           code: z.ZodIssueCode.custom,
           message: 'Customer name or customer ID is required for CREDIT.',
           path: ['customerName'],
-        });
-      }
-      if (data.saleMode) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'saleMode is only valid for SALE transactions.',
-          path: ['saleMode'],
         });
       }
       if (data.paymentMethod) {
@@ -171,13 +238,6 @@ export const createTransactionSchema = z
           code: z.ZodIssueCode.custom,
           message: 'Customer name or customer ID is required for PAYMENT.',
           path: ['customerName'],
-        });
-      }
-      if (data.saleMode) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'saleMode is only valid for SALE transactions.',
-          path: ['saleMode'],
         });
       }
       if (!data.paymentMethod) {
@@ -239,13 +299,6 @@ export const createTransactionSchema = z
         code: z.ZodIssueCode.custom,
         message: 'EXPENSE does not accept a customer.',
         path: ['customerName'],
-      });
-    }
-    if (data.saleMode) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'saleMode is only valid for SALE transactions.',
-        path: ['saleMode'],
       });
     }
     if (!data.paymentMethod) {
