@@ -8,8 +8,11 @@ import previewRoutes from './routes/preview.js';
 import customerRoutes from './routes/customers.js';
 import transactionRoutes from './routes/transactions.js';
 import dashboardRoutes from './routes/dashboard.js';
+import businessRoutes from './routes/businesses.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { getJwtSecret } from './services/auth/tokenService.js';
+import { PrismaSignupRepository } from './services/auth/signupService.js';
+import { logger } from './utils/logger.js';
 
 dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
@@ -41,7 +44,7 @@ app.use(
   cors({
     origin: corsOrigin,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-business-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-business-id', 'Idempotency-Key'],
   })
 );
 app.use(express.json());
@@ -56,6 +59,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/ai', aiRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/businesses', businessRoutes);
 app.use('/api/preview', previewRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/transactions', transactionRoutes);
@@ -63,6 +67,16 @@ app.use('/api/dashboard', dashboardRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+const signupRepository = new PrismaSignupRepository();
+const cleanupExpiredSignupData = () => {
+  void signupRepository.cleanupExpiredSignupSecrets(new Date()).catch(() => {
+    logger.warn('signup.cleanup_unavailable');
+  });
+};
+cleanupExpiredSignupData();
+const signupCleanupTimer = setInterval(cleanupExpiredSignupData, 60_000);
+signupCleanupTimer.unref();
 
 app.listen(port, () => {
   console.log(`HisabNaki backend running on http://localhost:${port}`);

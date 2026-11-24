@@ -7,6 +7,7 @@ import transactionRoutes from '../../routes/transactions.js';
 import dashboardRoutes from '../../routes/dashboard.js';
 import previewRoutes from '../../routes/preview.js';
 import authRoutes from '../../routes/auth.js';
+import businessRoutes from '../../routes/businesses.js';
 import { errorHandler, notFoundHandler } from '../../middleware/errorHandler.js';
 
 async function withApp(
@@ -95,6 +96,29 @@ describe('business routes require authentication', () => {
   it('auth memberships requires token-only auth (401)', async () => {
     await withApp((app) => app.use('/api/auth', authRoutes), async (base) => {
       const res = await fetch(`${base}/api/auth/memberships`);
+      assert.strictEqual(res.status, 401);
+    });
+  });
+
+  it('signup registration validates input before attempting persistence', async () => {
+    await withApp((app) => app.use('/api/auth', authRoutes), async (base) => {
+      const res = await fetch(`${base}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '', phone: '', password: '' }),
+      });
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual((await res.json() as { ok: boolean }).ok, false);
+    });
+  });
+
+  it('first-business creation requires an authenticated bearer token', async () => {
+    await withApp((app) => app.use('/api/businesses', businessRoutes), async (base) => {
+      const res = await fetch(`${base}/api/businesses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'integration-attempt-1' },
+        body: JSON.stringify({ name: 'Synthetic Shop' }),
+      });
       assert.strictEqual(res.status, 401);
     });
   });

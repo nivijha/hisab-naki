@@ -4,11 +4,17 @@ import {
   membershipsHandler,
   registerHandler,
 } from '../controllers/authController.js';
+import { resendSignupCodeHandler, verifySignupCodeHandler } from '../controllers/signupController.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
 import { authenticateToken } from '../middleware/authenticateToken.js';
-import { loginRateLimiter } from '../middleware/rateLimit.js';
+import {
+  loginRateLimiter,
+  signupResendRateLimiter,
+  signupVerifyRateLimiter,
+} from '../middleware/rateLimit.js';
 import { loginSchema, registerSchema } from '../schemas/auth.js';
+import { resendSignupCodeSchema, verifySignupCodeSchema } from '../schemas/signup.js';
 
 const router = Router();
 
@@ -18,6 +24,18 @@ router.post(
   loginRateLimiter,
   validate(registerSchema, 'body'),
   asyncHandler(registerHandler)
+);
+router.post(
+  '/register/resend',
+  signupResendRateLimiter,
+  validate(resendSignupCodeSchema, 'body'),
+  asyncHandler(resendSignupCodeHandler)
+);
+router.post(
+  '/register/verify',
+  signupVerifyRateLimiter,
+  validate(verifySignupCodeSchema, 'body'),
+  asyncHandler(verifySignupCodeHandler)
 );
 router.get('/memberships', asyncHandler(authenticateToken), asyncHandler(membershipsHandler));
 

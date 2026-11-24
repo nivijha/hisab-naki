@@ -1,10 +1,11 @@
 'use client';
 
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mic } from 'lucide-react';
 import { ApiError } from '@/lib/api-client';
+import { VERIFIED_SIGNUP_KEY } from '@/lib/signup-api';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 
@@ -28,8 +29,19 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [signupVerified, setSignupVerified] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const submitLock = useRef(false);
+
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(VERIFIED_SIGNUP_KEY) === 'true') {
+        window.sessionStorage.removeItem(VERIFIED_SIGNUP_KEY);
+        setFeedback('Phone verified. Sign in with your phone number and password to continue.');
+        setSignupVerified(true);
+      }
+    } catch { /* Sign-in remains available when storage is restricted. */ }
+  }, []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,6 +53,7 @@ export default function LoginPage() {
     submitLock.current = true;
     setSubmitting(true);
     setFeedback('');
+    setSignupVerified(false);
     try {
       await login(identifier.trim(), password);
       setPassword('');
@@ -101,12 +114,15 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {feedback && <p id="login-feedback" role="alert" className="rounded-md border border-forest/15 bg-beige p-3 text-sm text-forest">{feedback}</p>}
+                {feedback && <p id="login-feedback" role={signupVerified ? 'status' : 'alert'} className="rounded-md border border-forest/15 bg-beige p-3 text-sm text-forest">{feedback}</p>}
 
                 <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>
                   {submitting ? 'Signing in…' : 'Sign in'}
                 </Button>
               </form>
+              <p className="mt-5 text-center text-sm text-muted">
+                New to HisabNaki? <Link href="/signup" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Create an account</Link>.
+              </p>
             </>
           )}
         </section>

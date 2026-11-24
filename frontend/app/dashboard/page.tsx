@@ -99,6 +99,10 @@ const statCards = [
   { key: 'totalOutstanding', label: 'Total Outstanding', icon: <Users className="h-5 w-5" />, color: 'text-forest bg-beige' },
 ] as const;
 
+const readOnlyPreviewIntents = new Set([
+  'GET_BALANCE', 'GET_TOTAL_OUTSTANDING', 'GET_TODAY_TRANSACTIONS', 'GET_CUSTOMER_TRANSACTIONS',
+]);
+
 type PanelState<T> =
   | { status: 'loading' | 'error'; data?: T }
   | { status: 'not-found'; data?: never }
@@ -518,9 +522,14 @@ export default function DashboardPage() {
       if (!preview || preview.state !== 'pending') throw new Error('The server returned an incomplete or mismatched preview. Nothing was confirmed.');
       setVoicePreview(preview);
       setVoicePhase('preview');
+      const readOnlyIntent = readOnlyPreviewIntents.has(preview.intent);
       setVoiceFeedback(isSupportedPreviewWrite(preview)
         ? 'The server prepared a suggestion. Review the details below; confirmation is currently unavailable for safety.'
-        : 'The server could not prepare a complete transaction suggestion. Review the missing details below.');
+        : readOnlyIntent && preview.confidence > 0
+          ? 'This is a read-only question. This preview does not fetch a live balance or transaction history, and nothing was recorded. Use Find customer to view the ledger.'
+          : readOnlyIntent
+            ? 'The server could not understand this request. No balance or transaction history was fetched, and nothing was recorded. Try speaking again or use Find customer.'
+            : 'The server could not prepare a complete transaction suggestion. Review the missing details below.');
     } catch (error) {
       if (sequence !== previewRequestSequence.current || contextKey !== previewContextRef.current) return;
       if (controller.signal.aborted) {
@@ -1033,7 +1042,9 @@ export default function DashboardPage() {
             </div>
             <dl className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
               <dt className="font-medium text-muted">Intent</dt><dd className="break-words text-forest">{voicePreview.intent}</dd>
-              <dt className="font-medium text-muted">Parser status</dt><dd className="text-forest">{voicePreview.readyForConfirmation ? 'Backend marked complete (not independently verified)' : 'Backend marked incomplete'}</dd>
+              <dt className="font-medium text-muted">Parser status</dt><dd className="text-forest">{readOnlyPreviewIntents.has(voicePreview.intent)
+                ? voicePreview.confidence > 0 ? 'Read-only intent; no live ledger lookup was performed' : 'Request unclear; no ledger lookup was performed'
+                : voicePreview.readyForConfirmation ? 'Backend marked complete (not independently verified)' : 'Backend marked incomplete'}</dd>
               {voicePreview.type && <><dt className="font-medium text-muted">Transaction type</dt><dd className="text-forest">{voicePreview.type}</dd></>}
               {voicePreview.customerName && <><dt className="font-medium text-muted">Customer name from parser</dt><dd className="break-words text-forest">{voicePreview.customerName}</dd></>}
               {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">₹{String(voicePreview.amount)}</dd></>}
@@ -1161,7 +1172,7 @@ export default function DashboardPage() {
                     <p className="mt-1 break-words text-sm">{deleteTarget.name}{deleteTarget.phone ? ` · ${deleteTarget.phone}` : ''}</p>
                     <p className="text-xs">Customer ID {deleteTarget.id}</p>
                   </div>
-                  <p id="delete-customer-warning" className="text-sm">This action cannot be undone. Customers with transaction history cannot be deleted.</p>
+                  <p id="delete-customer-warning" className="text-sm">This removes the customer from the active list. Existing transaction history is retained, but the customer ledger may no longer be available. Check the balance before continuing.</p>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="destructive" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={() => { void deleteCustomer(); }}>{mutationPending ? 'Deleting…' : 'Delete customer'}</Button>
                     <Button ref={deleteCancelButton} type="button" variant="outline" disabled={mutationPending} onClick={() => { setDeleteTarget(null); restoreCustomerActionFocus(); }}>Cancel</Button>
