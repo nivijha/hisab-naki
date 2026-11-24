@@ -10,19 +10,35 @@ import transactionRoutes from './routes/transactions.js';
 import dashboardRoutes from './routes/dashboard.js';
 import businessRoutes from './routes/businesses.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { getJwtSecret } from './services/auth/tokenService.js';
 import { PrismaSignupRepository } from './services/auth/signupService.js';
 import { logger } from './utils/logger.js';
 
 dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+function assertStartupEnvironment(): void {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (typeof databaseUrl !== 'string' || databaseUrl.trim() === '') {
+    throw new Error('DATABASE_URL is required to start the backend.');
+  }
+
+  if (isProduction) {
+    const configuredOrigin = process.env.CORS_ORIGIN;
+    if (!configuredOrigin || configuredOrigin === '*') {
+      throw new Error('CORS_ORIGIN must be set to a specific frontend origin in production.');
+    }
+    getJwtSecret(); // Fails startup when the JWT secret is missing or shorter than 32 characters.
+  }
+}
+
+assertStartupEnvironment();
+
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
-const configuredOrigin = process.env.CORS_ORIGIN;
-if (process.env.NODE_ENV === 'production' && (!configuredOrigin || configuredOrigin === '*')) {
-  throw new Error('CORS_ORIGIN must be set to a specific frontend origin in production.');
-}
-const corsOrigin = configuredOrigin ?? '*';
+const corsOrigin = process.env.CORS_ORIGIN ?? '*';
 
 app.use(
   cors({

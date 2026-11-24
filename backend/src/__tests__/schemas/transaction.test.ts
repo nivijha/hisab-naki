@@ -138,8 +138,49 @@ describe('createTransactionSchema - conditional fields', () => {
     );
   });
 
-  it('rejects unknown transaction types', () => {
-    expectInvalidAt({ type: 'SALE_RETURN', amount: 100 }, 'type');
+  it('rejects truly unknown transaction types', () => {
+    expectInvalidAt({ type: 'VOID', amount: 100 }, 'type');
+    expectInvalidAt({ type: 'WITHDRAWAL', amount: 100 }, 'type');
+  });
+
+  it('accepts OPENING_BALANCE with an INCREASE or DECREASE direction', () => {
+    expectValid({ type: 'OPENING_BALANCE', customerName: 'Raju', openingDirection: 'INCREASE', amount: 100 });
+    expectValid({ type: 'OPENING_BALANCE', customerId: 'c-1', openingDirection: 'DECREASE', amount: 100 });
+    expectInvalidAt({ type: 'OPENING_BALANCE', amount: 100 }, 'customerName');
+    expectInvalidAt({ type: 'OPENING_BALANCE', customerName: 'Raju', amount: 100 }, 'openingDirection');
+    expectInvalidAt(
+      { type: 'OPENING_BALANCE', customerName: 'Raju', openingDirection: 'UP', amount: 100 },
+      'openingDirection'
+    );
+    expectInvalidAt({ type: 'OPENING_BALANCE', customerName: 'Raju', openingDirection: 'INCREASE', amount: 100, paymentMethod: 'CASH' }, 'paymentMethod');
+  });
+
+  it('rejects openingDirection on non-OPENING_BALANCE types', () => {
+    expectInvalidAt({ type: 'CREDIT', customerName: 'Raju', amount: 100, openingDirection: 'INCREASE' }, 'openingDirection');
+    expectInvalidAt({ type: 'SALE', amount: 100, saleMode: 'CASH', paymentMethod: 'CASH', openingDirection: 'DECREASE' }, 'openingDirection');
+  });
+
+  it('accepts SALE_RETURN with a customer and rejects it without one', () => {
+    expectValid({ type: 'SALE_RETURN', customerName: 'Raju', amount: 100 });
+    expectValid({ type: 'SALE_RETURN', customerId: 'c-1', amount: 100 });
+    expectInvalidAt({ type: 'SALE_RETURN', amount: 100 }, 'customerName');
+    expectInvalidAt({ type: 'SALE_RETURN', customerName: 'Raju', amount: 100, paymentMethod: 'CASH' }, 'paymentMethod');
+    expectInvalidAt({ type: 'SALE_RETURN', customerName: 'Raju', amount: 100, saleMode: 'CASH' }, 'saleMode');
+  });
+
+  it('accepts REFUND with or without a customer, but not with payment fields', () => {
+    expectValid({ type: 'REFUND', customerName: 'Raju', amount: 100 });
+    expectValid({ type: 'REFUND', amount: 100 });
+    expectInvalidAt({ type: 'REFUND', customerName: 'Raju', amount: 100, paymentMethod: 'CASH' }, 'paymentMethod');
+    expectInvalidAt({ type: 'REFUND', amount: 100, saleMode: 'CASH' }, 'saleMode');
+  });
+
+  it('rejects saleMode on every non-SALE type', () => {
+    expectInvalidAt({ type: 'CREDIT', customerName: 'Raju', amount: 100, saleMode: 'CASH' }, 'saleMode');
+    expectInvalidAt({ type: 'EXPENSE', amount: 100, paymentMethod: 'CASH', saleMode: 'CASH' }, 'saleMode');
+    expectInvalidAt({ type: 'OPENING_BALANCE', openingDirection: 'INCREASE', amount: 100, saleMode: 'CASH' }, 'saleMode');
+    expectInvalidAt({ type: 'SALE_RETURN', customerName: 'Raju', amount: 100, saleMode: 'CASH' }, 'saleMode');
+    expectInvalidAt({ type: 'REFUND', amount: 100, saleMode: 'CASH' }, 'saleMode');
   });
 
   it('strips spoofed tenant fields from the parsed body', () => {

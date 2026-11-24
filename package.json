@@ -13,7 +13,8 @@
     "prisma:validate": "npx prisma validate --schema prisma/schema.prisma",
     "prisma:deploy": "npx prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:status": "npx prisma migrate status --schema prisma/schema.prisma",
-    "prisma:seed": "npx tsx prisma/seed.ts"
+    "prisma:seed": "npx tsx prisma/seed.ts",
+    "prisma:seed:staging": "npx tsx prisma/seed-staging.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
