@@ -108,6 +108,7 @@ model User {
   voidedTransactions  Transaction[]             @relation("TransactionVoidedBy")
   voiceRequests       VoiceTransactionRequest[]
   auditLogs           AuditLog[]
+  businessCreationRequests BusinessCreationRequest[]
 }
 
 model OtpChallenge {
@@ -121,6 +122,8 @@ model OtpChallenge {
   expiresAt  DateTime   @db.Timestamptz(3)
   consumedAt DateTime?  @db.Timestamptz(3)
   attempts   Int        @default(0)
+  signupName String?
+  signupPasswordHash String?
   createdAt  DateTime   @default(now()) @db.Timestamptz(3)
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -142,9 +145,25 @@ model Business {
   transactions  Transaction[]
   voiceRequests VoiceTransactionRequest[]
   auditLogs     AuditLog[]
+  creationRequests BusinessCreationRequest[]
 
   @@index([name])
   @@index([deletedAt])
+}
+
+model BusinessCreationRequest {
+  id             String   @id @default(cuid())
+  userId         String
+  idempotencyKey String
+  requestHash    String
+  businessId     String
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([businessId])
 }
 
 model Membership {

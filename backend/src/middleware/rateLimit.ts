@@ -63,3 +63,21 @@ export const aiRateLimiter = createLoginRateLimiter({
   windowMs: positiveIntEnv('AI_RATE_LIMIT_WINDOW_MS', 60 * 1000),
   message: 'Too many interpretation requests. Please try again later.',
 });
+
+export const signupRateLimiter = createLoginRateLimiter({
+  max: positiveIntEnv('SIGNUP_RATE_LIMIT_MAX', 5),
+  windowMs: positiveIntEnv('SIGNUP_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  message: 'Too many signup attempts. Please wait before trying again.',
+});
+
+export const signupResendRateLimiter = createLoginRateLimiter({
+  max: positiveIntEnv('SIGNUP_RESEND_RATE_LIMIT_MAX', 3),
+  windowMs: positiveIntEnv('SIGNUP_RESEND_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  message: 'Too many verification-code requests. Please wait before trying again.',
+});
+
+export const signupVerifyRateLimiter = createLoginRateLimiter({
+  max: positiveIntEnv('SIGNUP_VERIFY_RATE_LIMIT_MAX', 10),
+  windowMs: positiveIntEnv('SIGNUP_VERIFY_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  message: 'Too many verification attempts. Please wait before trying again.',
+});

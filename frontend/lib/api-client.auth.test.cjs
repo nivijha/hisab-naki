@@ -55,3 +55,19 @@ test('preserves rate-limit feedback for login', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'Too many attempts.' }), { status: 429 });
   await assert.rejects(apiClient.login('a', 'b'), error => error instanceof ApiError && error.status === 429 && error.message === 'Too many attempts.');
 });
+
+test('supports authenticated onboarding requests without a selected-business header', async () => {
+  apiClient.setSession('onboarding-test-jwt');
+  globalThis.fetch = async (_url, init) => {
+    const headers = new Headers(init.headers);
+    assert.equal(headers.get('Authorization'), 'Bearer onboarding-test-jwt');
+    assert.equal(headers.has('X-Business-ID'), false);
+    assert.equal(headers.get('Idempotency-Key'), 'onboard-key-123');
+    return new Response(JSON.stringify({ ok: true, data: {} }), { status: 201 });
+  };
+  await apiClient.requestJson('/api/businesses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'onboard-key-123' },
+    body: JSON.stringify({ name: 'Nivi Shop' }),
+  }, 'auth');
+});

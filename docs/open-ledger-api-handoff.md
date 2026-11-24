@@ -61,3 +61,7 @@ Customer list/search and customer ledger navigation use stable customer IDs. Voi
 5. **High — authorization and tenant isolation.** Verify preview read, cancel, confirm, and ledger access for two synthetic businesses. Client business headers are request context, not authorization proof.
 6. **High — integration verification.** On isolated staging, verify persisted credit, repayment, sale, and expense against summary/history; cross-business denial; concurrent confirmation; expiration/cancellation races; and lost-response recovery. Use synthetic records only.
 Reviewed sources include [`frontend/app/dashboard/page.tsx`](../frontend/app/dashboard/page.tsx), [`backend/src/server.ts`](../backend/src/server.ts), [`backend/src/controllers/transactionController.ts`](../backend/src/controllers/transactionController.ts), [`backend/src/controllers/customerController.ts`](../backend/src/controllers/customerController.ts), [`backend/src/services/ai/intentService.ts`](../backend/src/services/ai/intentService.ts), and [`prisma/schema.prisma`](../prisma/schema.prisma).
+
+## Signup and onboarding status
+
+Self-service account signup and first-business creation are now implemented in backend source. See [signup-onboarding-api-requirements.md](signup-onboarding-api-requirements.md) and the current frontend handoff for exact contracts. This does not change the Open Ledger financial endpoints or enable any financial writes. Live staging verification remains blocked until the onboarding migration is applied and a real OTP delivery provider is configured.

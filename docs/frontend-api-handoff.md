@@ -472,3 +472,15 @@ POST /api/preview/<uuid>/confirm
 - **Env gaps found:** root `.env` lacks `JWT_SECRET` (required — login will throw `TokenError('JWT secret is not configured.')` → `500` if unset). `SEED_PASSWORD` has a default. Other vars have defaults or are optional (`CORS_ORIGIN` — set in production).
 - **Seed script status:** `prisma/seed.ts` is stale — uses `prisma.customer.upsert({ where: { id }, create: { id, userId, name, phone } })` and `prisma.user.upsert({ where: { email }, create: { name, email, businessName } })`; the current schema has no `Customer.userId` or `User.businessName`. It cannot run as-is against the current schema.
 - **Minor defect found:** `POST /api/customers/` accepts whitespace-only names (`createCustomerSchema` `z.string().min(1)` without trim) — such requests 500 via the service's `Customer name is required.` error; schema now rejects them with `400` (fixed).
+
+## Signup and onboarding contract update (2026-11-23)
+
+The routes below are implemented in source, but are not staging-verified until migration `20261123130000_signup_onboarding` is applied and the OTP provider is configured. See [signup-onboarding-api-requirements.md](signup-onboarding-api-requirements.md) for full schemas and error behavior.
+
+- Public `POST /api/auth/register`: strict `{ name, phone, password }`; returns 202 with a masked phone and expiry after delivery. Phone verification is required; registration does not issue a JWT.
+- Public `POST /api/auth/register/resend`: `{ phone }`; generic 202 response and rate-limited delivery.
+- Public `POST /api/auth/register/verify`: `{ phone, code }`; returns `{ verified: true }`; successful verification creates the account. Client then uses the unchanged login endpoint.
+- `POST /api/businesses`: JWT required, no business header; `{ name }` plus `Idempotency-Key`; atomically creates one business and an active OWNER membership for a verified user with no active membership. Same key/body replays the original result.
+- CORS now permits `Idempotency-Key` for browser requests.
+
+These new endpoints are not yet part of a deployed or live database verification. The historical environment status in this handoff is retained as an earlier snapshot.
