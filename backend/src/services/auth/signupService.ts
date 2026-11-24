@@ -132,7 +132,9 @@ export class PrismaSignupRepository implements SignupRepository {
 
   async createPendingSignup(input: { name: string; phone: string; passwordHash: string; codeHash: string; expiresAt: Date }): Promise<void> {
     await this.client.$transaction(async tx => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.phone}, 0))`;
+      // The advisory lock returns PostgreSQL `void`; execute it without asking
+      // Prisma to deserialize a result row.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.phone}, 0))`;
       const pending = await tx.$queryRaw<Array<{ id: string; expiresAt: Date }>>`SELECT "id", "expiresAt" FROM "OtpChallenge" WHERE "phone" = ${input.phone} AND "purpose" = 'SIGNUP'::"OtpPurpose" AND "userId" IS NULL AND "status" = 'ACTIVE'::"OtpStatus" ORDER BY "createdAt" DESC LIMIT 1`;
       if (pending[0] && pending[0].expiresAt.getTime() > Date.now()) throw new PendingSignupExists();
       if (pending[0]) await tx.$executeRaw`UPDATE "OtpChallenge" SET "status" = 'EXPIRED'::"OtpStatus", "signupName" = NULL, "signupPasswordHash" = NULL WHERE "id" = ${pending[0].id}`;
@@ -142,7 +144,7 @@ export class PrismaSignupRepository implements SignupRepository {
 
   async createReplacementChallenge(phone: string, codeHash: string, expiresAt: Date): Promise<boolean> {
     return this.client.$transaction(async tx => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${phone}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${phone}, 0))`;
       const rows = await tx.$queryRaw<Array<{ id: string; expiresAt: Date; signupName: string | null; signupPasswordHash: string | null }>>`SELECT "id", "expiresAt", "signupName", "signupPasswordHash" FROM "OtpChallenge" WHERE "phone" = ${phone} AND "purpose" = 'SIGNUP'::"OtpPurpose" AND "userId" IS NULL AND "status" IN ('ACTIVE'::"OtpStatus", 'EXPIRED'::"OtpStatus") ORDER BY "createdAt" DESC LIMIT 1`;
       const previous = rows[0];
       if (!previous?.signupName || !previous.signupPasswordHash) return false;

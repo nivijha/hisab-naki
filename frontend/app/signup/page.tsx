@@ -51,6 +51,8 @@ export default function SignupPage() {
     try {
       try { window.sessionStorage.setItem(PENDING_SIGNUP_PHONE_KEY, normalizedPhone); } catch { /* Keep this flow usable if storage is restricted. */ }
       await registerSignup({ name: normalizedName, phone: normalizedPhone, password }, AbortSignal.timeout(20_000));
+      setPassword('');
+      setConfirmPassword('');
       router.push('/signup/verify');
     } catch (error) {
       setFeedback(messageFor(error));
@@ -60,8 +62,6 @@ export default function SignupPage() {
     } finally {
       submitLock.current = false;
       setSubmitting(false);
-      setPassword('');
-      setConfirmPassword('');
     }
   };
 

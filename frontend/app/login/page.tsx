@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mic } from 'lucide-react';
 import { ApiError } from '@/lib/api-client';
 import { VERIFIED_SIGNUP_KEY } from '@/lib/signup-api';
+import { normalizeLoginIdentifier } from '@/lib/auth-identifier';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 
@@ -55,7 +56,7 @@ export default function LoginPage() {
     setFeedback('');
     setSignupVerified(false);
     try {
-      await login(identifier.trim(), password);
+      await login(normalizeLoginIdentifier(identifier), password);
       setPassword('');
       router.replace('/business/select');
     } catch (error) {

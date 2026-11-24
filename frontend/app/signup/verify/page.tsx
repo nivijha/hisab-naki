@@ -8,12 +8,18 @@ import { ApiError } from '@/lib/api-client';
 import { PENDING_SIGNUP_PHONE_KEY, VERIFIED_SIGNUP_KEY, resendSignupCode, verifySignupCode } from '@/lib/signup-api';
 import { Button } from '@/components/ui/button';
 
+const RESEND_COOLDOWN_MS = 60_000;
+const RESEND_COOLDOWN_KEY = 'hisabnaki:signup:resend-after';
+
 function verificationMessage(error: unknown) {
   if (!(error instanceof ApiError)) return 'We could not verify this code. Try again.';
   if (error.status === 400) return 'This code is incorrect, expired, or out of attempts. Request a new code and try again.';
   if (error.status === 429) return 'Too many verification attempts. Please wait before trying again.';
-  if (error.status === 503 || (error.status !== undefined && error.status >= 500)) return 'Phone verification is temporarily unavailable.';
-  if (error.kind === 'network' || error.kind === 'aborted' || error.kind === 'invalid-response') return 'We could not confirm the verification result. Your account may already be verified. Try signing in; if that does not work, request a new code.';
+  if (error.status === 503) return 'Phone verification is temporarily unavailable. You can request another code when service returns.';
+  if ((error.status !== undefined && error.status >= 500)
+    || error.kind === 'network' || error.kind === 'aborted' || error.kind === 'invalid-response') {
+    return 'We could not confirm whether verification completed. Your account may already be verified. Try signing in; if sign-in does not work, return here and request a new code.';
+  }
   return error.message;
 }
 
@@ -25,14 +31,38 @@ export default function SignupVerificationPage() {
   const [resending, setResending] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [isError, setIsError] = useState(false);
+  const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
   const submitLock = useRef(false);
   const resendLock = useRef(false);
+
+  const beginResendCooldown = () => {
+    const cooldownUntil = Date.now() + RESEND_COOLDOWN_MS;
+    setResendCooldownSeconds(Math.ceil(RESEND_COOLDOWN_MS / 1000));
+    try { window.sessionStorage.setItem(RESEND_COOLDOWN_KEY, String(cooldownUntil)); }
+    catch { /* The server rate limit remains authoritative if storage is unavailable. */ }
+  };
 
   useEffect(() => {
     try {
       const savedPhone = window.sessionStorage.getItem(PENDING_SIGNUP_PHONE_KEY);
       if (savedPhone) setPhone(savedPhone);
     } catch { /* The phone can be entered again if session storage is unavailable. */ }
+
+    let timer: number | undefined;
+    const updateCooldown = () => {
+      let until = 0;
+      try { until = Number(window.sessionStorage.getItem(RESEND_COOLDOWN_KEY)) || 0; } catch { /* Cooldown remains local to this page session. */ }
+      const seconds = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      setResendCooldownSeconds(seconds);
+      if (seconds > 0 && timer === undefined) timer = window.setInterval(updateCooldown, 1000);
+      if (seconds === 0) {
+        if (timer !== undefined) window.clearInterval(timer);
+        timer = undefined;
+        try { window.sessionStorage.removeItem(RESEND_COOLDOWN_KEY); } catch { /* The client throttle is best effort; the server remains authoritative. */ }
+      }
+    };
+    updateCooldown();
+    return () => { if (timer !== undefined) window.clearInterval(timer); };
   }, []);
 
   const verify = async (event: FormEvent<HTMLFormElement>) => {
@@ -54,6 +84,7 @@ export default function SignupVerificationPage() {
       try {
         window.sessionStorage.removeItem(PENDING_SIGNUP_PHONE_KEY);
         window.sessionStorage.setItem(VERIFIED_SIGNUP_KEY, 'true');
+        window.sessionStorage.removeItem(RESEND_COOLDOWN_KEY);
       } catch { /* Verification is complete; navigation still proceeds. */ }
       router.replace('/login');
     } catch (error) {
@@ -66,7 +97,7 @@ export default function SignupVerificationPage() {
   };
 
   const resend = async () => {
-    if (resendLock.current) return;
+    if (resendLock.current || resendCooldownSeconds > 0) return;
     const normalizedPhone = phone.trim();
     if (!normalizedPhone) {
       setIsError(true);
@@ -79,14 +110,21 @@ export default function SignupVerificationPage() {
     setIsError(false);
     try {
       const message = await resendSignupCode(normalizedPhone, AbortSignal.timeout(20_000));
-      try { window.sessionStorage.setItem(PENDING_SIGNUP_PHONE_KEY, normalizedPhone); } catch { /* Keep current form state. */ }
+      beginResendCooldown();
+      try {
+        window.sessionStorage.setItem(PENDING_SIGNUP_PHONE_KEY, normalizedPhone);
+      } catch { /* The server rate limit remains authoritative if storage is unavailable. */ }
       setFeedback(message);
     } catch (error) {
       setIsError(true);
+      const uncertainDelivery = error instanceof ApiError
+        && (error.kind === 'network' || error.kind === 'aborted' || error.kind === 'invalid-response'
+          || (error.status !== undefined && error.status >= 500 && error.status !== 503));
+      if (uncertainDelivery) beginResendCooldown();
       setFeedback(error instanceof ApiError && error.status === 429
         ? 'Too many code requests. Please wait before requesting another.'
-        : error instanceof ApiError && error.kind === 'network'
-          ? 'Could not contact HisabNaki. Check your connection and try again.'
+        : uncertainDelivery
+          ? 'We could not confirm whether a new code was sent. Wait a minute before requesting another code.'
           : error instanceof ApiError && error.status === 503
             ? 'Phone verification is temporarily unavailable. Try again later.'
             : error instanceof ApiError ? error.message : 'Could not request a new code. Please try again.');
@@ -123,8 +161,8 @@ export default function SignupVerificationPage() {
             <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>{submitting ? 'Verifying…' : 'Verify phone'}</Button>
           </form>
 
-          <Button type="button" variant="outline" className="mt-3 w-full" disabled={resending || submitting} aria-busy={resending} onClick={() => { void resend(); }}>
-            {resending ? 'Requesting code…' : 'Resend code'}
+          <Button type="button" variant="outline" className="mt-3 w-full" disabled={resending || submitting || resendCooldownSeconds > 0} aria-busy={resending} onClick={() => { void resend(); }}>
+            {resending ? 'Requesting code…' : resendCooldownSeconds > 0 ? `Resend code in ${resendCooldownSeconds}s` : 'Resend code'}
           </Button>
           <p className="mt-5 text-center text-sm text-muted">Already verified? <Link href="/login" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Sign in</Link></p>
           <p className="mt-2 text-center text-sm text-muted">Need to start again? <Link href="/signup" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Back to signup</Link></p>
