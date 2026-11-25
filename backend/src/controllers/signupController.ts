@@ -1,14 +1,18 @@
 import type { Request, Response } from 'express';
 import { HttpError } from '../middleware/authenticate.js';
-import { PrismaSignupRepository, createSignupService } from '../services/auth/signupService.js';
-import { HttpOtpDelivery } from '../services/auth/otpDelivery.js';
+import {
+  PrismaSignupRepository,
+  createSignupService,
+  resolveOtpHashSecret,
+} from '../services/auth/signupService.js';
+import { createOtpDelivery } from '../services/auth/otpDelivery.js';
 
 function signupService() {
-  const hashSecret = process.env.OTP_HASH_SECRET || process.env.JWT_SECRET;
-  if (!hashSecret || hashSecret.length < 32) {
-    throw new HttpError(503, 'Phone verification is not configured.');
-  }
-  return createSignupService({ repository: new PrismaSignupRepository(), delivery: new HttpOtpDelivery(), hashSecret });
+  return createSignupService({
+    repository: new PrismaSignupRepository(),
+    delivery: createOtpDelivery(),
+    hashSecret: resolveOtpHashSecret(),
+  });
 }
 
 export async function registerHandler(req: Request, res: Response) {

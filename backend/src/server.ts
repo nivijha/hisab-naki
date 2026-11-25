@@ -11,7 +11,8 @@ import dashboardRoutes from './routes/dashboard.js';
 import businessRoutes from './routes/businesses.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { getJwtSecret } from './services/auth/tokenService.js';
-import { PrismaSignupRepository } from './services/auth/signupService.js';
+import { assertOtpDeliveryEnvironment } from './services/auth/otpDelivery.js';
+import { assertOtpHashSecretConfigured, PrismaSignupRepository } from './services/auth/signupService.js';
 import { logger } from './utils/logger.js';
 
 dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
@@ -24,12 +25,15 @@ function assertStartupEnvironment(): void {
     throw new Error('DATABASE_URL is required to start the backend.');
   }
 
+  assertOtpDeliveryEnvironment();
+
   if (isProduction) {
     const configuredOrigin = process.env.CORS_ORIGIN;
     if (!configuredOrigin || configuredOrigin === '*') {
       throw new Error('CORS_ORIGIN must be set to a specific frontend origin in production.');
     }
     getJwtSecret(); // Fails startup when the JWT secret is missing or shorter than 32 characters.
+    assertOtpHashSecretConfigured(); // Fails startup when OTP_HASH_SECRET is missing or shorter than 32 characters in production.
   }
 }
 

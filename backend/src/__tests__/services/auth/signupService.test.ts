@@ -1,6 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createOtpCodeHash, createSignupService, type OtpDelivery, type SignupChallenge, type SignupRepository } from '../../../services/auth/signupService.js';
+import {
+  assertOtpHashSecretConfigured,
+  createOtpCodeHash,
+  createSignupService,
+  maskPhone,
+  resolveOtpHashSecret,
+  type OtpDelivery,
+  type SignupChallenge,
+  type SignupRepository,
+} from '../../../services/auth/signupService.js';
 import { HttpError } from '../../../middleware/authenticate.js';
 
 const SECRET = 'signup-tests-hash-secret-that-is-32-chars-minimum';
@@ -73,7 +82,7 @@ describe('signup service', () => {
   it('stores only an HMAC of the OTP and a password hash, then sends the code', async () => {
     const { service, repository, delivery } = setup();
     const result = await service.register({ name: 'Nivi Shopkeeper', phone: PHONE, password: 'long-test-password' });
-    assert.deepEqual(result, { maskedPhone: '•••••••••3210', expiresAt: new Date(NOW.getTime() + 600_000), verificationRequired: true });
+    assert.deepEqual(result, { maskedPhone: `${'\u2022'.repeat(8)}3210`, expiresAt: new Date(NOW.getTime() + 600_000), verificationRequired: true });
     assert.equal(repository.challenge?.codeHash, createOtpCodeHash(PHONE, '004201', SECRET));
     assert.notEqual(repository.challenge?.codeHash, '004201');
     assert.equal(repository.challenge?.signupPasswordHash, 'test-hash:long-test-password');
@@ -123,6 +132,15 @@ describe('signup service', () => {
     assert.equal(repository.userCreated, false);
   });
 
+  it('signup responses expose no plaintext OTP (register or resend)', async () => {
+    const { service, delivery } = setup();
+    const registered = await service.register({ name: 'Nivi Shopkeeper', phone: PHONE, password: 'long-test-password' });
+    assert.equal(JSON.stringify(registered).includes('004201'), false);
+    const resent = await service.resend(PHONE);
+    assert.equal(JSON.stringify(resent).includes('007777'), false);
+    assert.ok(delivery.sent.length >= 2, 'codes were delivered through the OTP delivery adapter');
+  });
+
   it('resends without disclosing account existence and never includes the code in response', async () => {
     const repository = new FakeSignupRepository();
     const { service, delivery } = setup({ repository });
@@ -142,5 +160,86 @@ describe('signup service', () => {
     await expectHttpError(service.register({ name: 'Nivi Shopkeeper', phone: PHONE, password: 'long-test-password' }), 503, /verification code/);
     assert.ok(repository.challenge);
     assert.equal(repository.challenge?.signupPasswordHash, 'test-hash:long-test-password');
+  });
+});
+
+describe('maskPhone', () => {
+  it('masks a normal Indian number keeping only the last four digits', () => {
+    const masked = maskPhone('9876543210');
+    assert.ok(masked.endsWith('3210'));
+    assert.strictEqual(masked.replace(/\D/g, ''), '3210');
+  });
+
+  it('masks +91 numbers with the country code stripped', () => {
+    for (const phone of ['+919876543210', '91 9876543210']) {
+      const masked = maskPhone(phone);
+      assert.ok(masked.endsWith('3210'));
+      assert.strictEqual(masked.replace(/\D/g, ''), '3210');
+    }
+  });
+
+  it('masks numbers with spaces or separators between digits', () => {
+    const masked = maskPhone('(987) 654-3210');
+    assert.ok(masked.endsWith('3210'));
+    assert.strictEqual(masked.replace(/\D/g, ''), '3210');
+  });
+
+  it('masks short numbers without exposing more than the final four digits', () => {
+    assert.strictEqual(maskPhone('1234'), '1234');
+    assert.strictEqual(maskPhone('12'), '12');
+  });
+
+  it('handles malformed or empty inputs safely', () => {
+    assert.strictEqual(maskPhone(''), '');
+    assert.strictEqual(maskPhone('   '), '');
+    assert.strictEqual(maskPhone('---'), '');
+  });
+
+  it('never exposes more than the final four digits for any input', () => {
+    for (const phone of ['+919876543210', '(98765) 43210', '9876543210', '12345', '9']) {
+      const digits = maskPhone(phone).replace(/\D/g, '');
+      assert.ok(digits.length <= 4, `expected at most four digits for ${phone}, got ${digits}`);
+    }
+  });
+});
+
+describe('OTP_HASH_SECRET configuration', () => {
+  const saved: Record<string, string | undefined> = {};
+  const KEYS = ['NODE_ENV', 'OTP_HASH_SECRET', 'JWT_SECRET'] as const;
+
+  function setEnv(values: Record<string, string | undefined>): void {
+    for (const key of KEYS) {
+      const value = values[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  it('rejects missing OTP_HASH_SECRET in production (no silent fallback)', () => {
+    setEnv({ NODE_ENV: 'production', OTP_HASH_SECRET: undefined });
+    assert.throws(() => assertOtpHashSecretConfigured(), /OTP_HASH_SECRET is required in production/);
+  });
+
+  it('rejects weak OTP_HASH_SECRET in production', () => {
+    setEnv({ NODE_ENV: 'production', OTP_HASH_SECRET: 'short' });
+    assert.throws(() => assertOtpHashSecretConfigured(), /OTP_HASH_SECRET must be at least 32 characters/);
+    assert.throws(() => resolveOtpHashSecret(), /OTP_HASH_SECRET must be at least 32 characters/);
+  });
+
+  it('accepts a valid OTP_HASH_SECRET in production', () => {
+    setEnv({ NODE_ENV: 'production', OTP_HASH_SECRET: 'a'.repeat(40) });
+    assert.doesNotThrow(() => assertOtpHashSecretConfigured());
+    assert.strictEqual(resolveOtpHashSecret(), 'a'.repeat(40));
+  });
+
+  it('keeps the JWT_SECRET fallback in development when OTP_HASH_SECRET is unset', () => {
+    setEnv({ NODE_ENV: 'development', OTP_HASH_SECRET: undefined, JWT_SECRET: 'b'.repeat(40) });
+    assert.doesNotThrow(() => assertOtpHashSecretConfigured());
+    assert.strictEqual(resolveOtpHashSecret(), 'b'.repeat(40));
+  });
+
+  it('rejects a weak OTP_HASH_SECRET in development', () => {
+    setEnv({ NODE_ENV: 'development', OTP_HASH_SECRET: 'weak' });
+    assert.throws(() => resolveOtpHashSecret(), /OTP_HASH_SECRET must be at least 32 characters/);
   });
 });

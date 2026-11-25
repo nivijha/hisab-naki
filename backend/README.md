@@ -19,24 +19,35 @@ npm run dev --workspace backend
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | yes | PostgreSQL connection |
+| `NODE_ENV` | no | Application environment; `mock` OTP delivery only works when this is `development` |
+| `OTP_DELIVERY_MODE` | no | `http` (default) uses a real gateway; `mock` logs the OTP in the backend terminal (development only — rejected in production) |
 | `JWT_SECRET` | yes (≥32 chars) | HS256 signing secret |
 | `JWT_EXPIRES_IN_SECONDS` | no | Access token TTL, default 3600, capped at 86400 |
 | `CORS_ORIGIN` | production | Explicit frontend origin; wildcard rejected in production |
-| `LOGIN_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Login/register limiter defaults 10 / 900000 |
+| `LOGIN_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Login limiter defaults 10 / 900000 |
+| `SIGNUP_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Phone-signup register limiter defaults 5 / 900000 |
+| `SIGNUP_RESEND_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Verification-code resend limiter defaults 3 / 900000 |
+| `SIGNUP_VERIFY_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Verification-code confirm limiter defaults 10 / 900000 |
 | `AI_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Interpretation limiter defaults 30 / 60000 |
 | `PREVIEW_TTL_MS` | no | Preview TTL, default 900000 (15 min) |
 | `DASHBOARD_BUSINESS_NAME` | no | Fallback business name, default `My Business` |
-| `SEED_PASSWORD` | no | Staging seed password (default `staging-password`); never commit real values |
+| `OTP_DELIVERY_URL` | no | OTP delivery gateway endpoint — **required** for `POST /api/auth/register` and verify when `OTP_DELIVERY_MODE=http` (signup returns 503 without it) |
+| `OTP_DELIVERY_TOKEN` | no | Bearer token for the OTP delivery gateway |
+| `OTP_DELIVERY_CHANNEL` | no | Delivery channel `SMS` (default) or `WHATSAPP` |
+| `OTP_HASH_SECRET` | yes (≥32 chars) in production | HMAC secret for OTP codes; required in production (no silent `JWT_SECRET` fallback), falls back to `JWT_SECRET` in development |
+| `SEED_PASSWORD` | no | Staging seed password; required by `npm run prisma:seed:staging` (staging-only, never commit) |
 
 Never commit real secrets. `SEED_PASSWORD` is staging-only.
 
 ## Authentication flow
 
 1. `POST /api/auth/login` with `{ identifier, password }` (email or phone). Returns `{ ok: true, data: { token, tokenType, expiresAt, expiresIn } }`.
-2. `POST /api/auth/register` (new; see contract below).
+2. `POST /api/auth/register` — immediate registration: creates User + Business + OWNER/ACTIVE membership atomically and returns a JWT (see contract).
 3. `GET /api/auth/memberships` with `Authorization: Bearer <token>` (no business header needed) returns ACTIVE memberships: `[{ membershipId, businessId, businessName, role, status }]`.
 4. Every business request requires **both** `Authorization: Bearer <token>` and `x-business-id: <Business.id>`.
 5. Middleware verifies the JWT, resolves an ACTIVE membership for the requested business (business must not be soft-deleted), and attaches `req.auth = { userId, businessId, membershipId, role }`.
+
+Phone signup flow (OTP, mounted for later use): `POST /api/auth/register/resend` + `POST /api/auth/register/verify`; see the signup contracts below.
 
 Roles OWNER/ADMIN/STAFF all have access to current APIs; `role` is retained for future authorization. A suspended or removed membership returns `403`, and unknown/foreign business IDs return `403`.
 
@@ -49,7 +60,9 @@ All success responses: `{ ok: true, data, message?, responseText? }`. Errors: `{
 | Method & URL | Auth | Body | Success | Errors |
 |---|---|---|---|---|
 | `POST /api/auth/login` | public, rate limited (10/15min per IP) | `{ identifier: string (email or phone), password: string }` | `200 { ok: true, data: { token, tokenType: "Bearer", expiresAt, expiresIn } }` | `400` identifier/password required; `401` invalid credentials; `429` rate limited |
-| `POST /api/auth/register` | public, rate limited (10/15min per IP) | `{ name, email, businessName, password, phone? }` | `201 { ok: true, data: RegisterResult }` (below) | `400` duplicate email/phone or invalid input; `429` rate limited |
+| `POST /api/auth/register` | public, rate limited (5/15min per IP) | `{ name, email, businessName, password, phone? }` | `201 { ok: true, data: RegisterResult }` (below) | `400` duplicate email/phone or invalid input; `429` rate limited |
+| `POST /api/auth/register/resend` | public, rate limited (3/15min per IP) | `{ phone }` | `202 { ok: true, data: { message: string } }` | `400` invalid phone; `429` |
+| `POST /api/auth/register/verify` | public, rate limited (10/15min per IP) | `{ phone, code }` (6-digit) | `200 { ok: true, data: { verified: true } }` | `400` invalid/expired code; `429` |
 | `GET /api/auth/memberships` | Bearer only | – | `200 { ok: true, data: MembershipSummary[] }` | `401` missing/invalid token |
 
 `RegisterResult`:
@@ -71,11 +84,20 @@ All success responses: `{ ok: true, data, message?, responseText? }`. Errors: `{
 
 Registration rules:
 
-- Validates with Zod: `name` (1–100 chars), `email` (valid format), `password` (8–128 chars), `businessName` (1–100 chars), optional `phone`.
+- Validates with Zod: `name` (1–100), `email` (valid format), `businessName` (1–100), `password` (8–128), optional `phone`.
 - Checks duplicates before creation: `400` "Email address is already registered." or "Phone number is already registered."
 - Passwords are hashed with the existing scrypt implementation; plaintext is never stored and never returned.
 - Creates User + Business + OWNER/ACTIVE Membership atomically with Prisma `$transaction`; the token uses the same JWT mechanism as login.
-- `phoneVerifiedAt` is not set at registration; the number stays unverified until the separate OTP verification flow.
+
+### First business creation
+
+| Method & URL | Auth | Headers | Body | Success | Errors |
+|---|---|---|---|---|---|
+| `POST /api/businesses` | Bearer only | `Idempotency-Key` (8–128 chars) required | `{ name: string (2–120) }` | `201 { ok: true, data: { business, membership, replayed } }` (200 when replayed) | `400` invalid key/name; `401`; `403` phone not verified; `409` already has an active business or key reused with different name; `429` (10/15min, fixed) |
+
+`CreatedFirstBusiness`: `{ business: { id, name, currency }, membership: { membershipId, businessId, role: "OWNER", status: "ACTIVE" }, replayed: boolean }`.
+
+Notes: requires `user.phoneVerifiedAt` (set by `POST /api/auth/register/verify`); idempotent via the `BusinessCreationRequest` table (`@@unique([userId, idempotencyKey])`) with a Serializable transaction guard.
 
 ### Dashboard
 
@@ -221,6 +243,40 @@ SEED_PASSWORD=your-staging-password npm run prisma:seed:staging
 ```
 
 Safety rules: never run `prisma:seed` (dev) against staging, or `prisma:seed:staging` against the development database; do not modify or delete development data; do not commit `.env` files or secrets.
+
+## Mock OTP delivery (development only)
+
+For local development you can test the full signup + verification flow without an SMS provider. `MockOtpDelivery` (backend/src/services/auth/otpDelivery.ts) logs the generated code in the **backend terminal** with the phone number masked.
+
+Enable it with:
+
+```bash
+NODE_ENV=development
+OTP_DELIVERY_MODE=mock
+```
+
+(See `.env.example`.)
+
+### How to test the signup flow locally
+
+1. `POST /api/auth/register` — `{ name, phone, password }` → `202/201` with `{ ok: true, data: { maskedPhone, expiresAt, verificationRequired } }`.
+2. Check the backend terminal for the code, e.g.:
+
+   `[DEV OTP] Phone: ••••••••1234 | Code: 482913`
+
+3. `POST /api/auth/register/verify` — `{ phone, code }` → `200 { ok: true, data: { verified: true } }`.
+4. `POST /api/auth/login` — `{ identifier: phone, password }` → token.
+
+### Security of mock mode
+
+- Mock mode activates only when `NODE_ENV=development` **and** `OTP_DELIVERY_MODE=mock`; `createOtpDelivery()` throws otherwise (no silent fallback to HTTP).
+- Startup fails in production when `OTP_DELIVERY_MODE=mock` (`assertOtpDeliveryEnvironment` in `backend/src/server.ts`).
+- OTP generation, HMAC hashing, 10-minute expiry, the 5-attempt limit and all rate limits are unchanged.
+- Never use mock mode in staging or production.
+
+### Configuring MSG91 later
+
+Set `OTP_DELIVERY_MODE=http`, `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN`; in production the URL must use HTTPS. `OTP_DELIVERY_CHANNEL` defaults to `SMS`; `OTP_HASH_SECRET` is required (≥32 chars) in production.
 
 ## Deployment (Render)
 

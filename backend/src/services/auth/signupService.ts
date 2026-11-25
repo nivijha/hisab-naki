@@ -46,8 +46,51 @@ function isUniqueConflict(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2002');
 }
 
-function maskPhone(phone: string) {
-  return `${'\u2022'.repeat(Math.max(0, phone.length - 4))}${phone.slice(-4)}`;
+export function maskPhone(phone: string): string {
+  const text = String(phone ?? '').trim();
+  const digits = text.replace(/\D/g, '');
+  if (digits.length <= 4) return digits;
+  return `${'\u2022'.repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
+function readOtpHashSecret(): string {
+  return process.env.OTP_HASH_SECRET?.trim() ?? '';
+}
+
+/**
+ * Startup validation: OTP_HASH_SECRET is required and must be ≥32 characters in
+ * production. Called before the server listens (backend/src/server.ts).
+ */
+export function assertOtpHashSecretConfigured(): void {
+  const explicit = readOtpHashSecret();
+  if (explicit) {
+    if (explicit.length < 32) {
+      throw new Error('OTP_HASH_SECRET must be at least 32 characters.');
+    }
+    return;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('OTP_HASH_SECRET is required in production.');
+  }
+}
+
+export function resolveOtpHashSecret(): string {
+  const explicit = readOtpHashSecret();
+  if (explicit) {
+    if (explicit.length < 32) {
+      throw new HttpError(503, 'OTP_HASH_SECRET must be at least 32 characters.');
+    }
+    return explicit;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new HttpError(503, 'OTP_HASH_SECRET is required in production.');
+  }
+  // Development fallback: reuse a valid JWT_SECRET when OTP_HASH_SECRET is unset.
+  const fallback = process.env.JWT_SECRET?.trim() ?? '';
+  if (fallback.length < 32) {
+    throw new HttpError(503, 'Phone verification is not configured.');
+  }
+  return fallback;
 }
 
 class PendingSignupExists extends Error {}

@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { NextFunction, Request, Response } from 'express';
-import { createLoginRateLimiter } from '../../middleware/rateLimit.js';
+import {
+  createLoginRateLimiter,
+  signupRateLimiter,
+  signupResendRateLimiter,
+  signupVerifyRateLimiter,
+} from '../../middleware/rateLimit.js';
 
 function runLimiter(limiter: ReturnType<typeof createLoginRateLimiter>, ip = '127.0.0.1') {
   const req = { ip } as Request;
@@ -50,5 +55,28 @@ describe('login rate limiter', () => {
     assert.strictEqual(runLimiter(limiter, '1.1.1.1'), false);
     assert.strictEqual(runLimiter(limiter, '1.1.1.1'), true);
     assert.strictEqual(runLimiter(limiter, '2.2.2.2'), false);
+  });
+});
+
+describe('signup rate limiters', () => {
+  it('signupRateLimiter blocks after its default maximum of 5', () => {
+    for (let index = 0; index < 5; index += 1) {
+      assert.strictEqual(runLimiter(signupRateLimiter, '10.0.0.1'), false);
+    }
+    assert.strictEqual(runLimiter(signupRateLimiter, '10.0.0.1'), true, 'sixth attempt blocked');
+  });
+
+  it('signupResendRateLimiter blocks after its default maximum of 3', () => {
+    for (let index = 0; index < 3; index += 1) {
+      assert.strictEqual(runLimiter(signupResendRateLimiter, '10.0.0.2'), false);
+    }
+    assert.strictEqual(runLimiter(signupResendRateLimiter, '10.0.0.2'), true, 'fourth attempt blocked');
+  });
+
+  it('signupVerifyRateLimiter blocks after its default maximum of 10', () => {
+    for (let index = 0; index < 10; index += 1) {
+      assert.strictEqual(runLimiter(signupVerifyRateLimiter, '10.0.0.3'), false);
+    }
+    assert.strictEqual(runLimiter(signupVerifyRateLimiter, '10.0.0.3'), true, 'eleventh attempt blocked');
   });
 });

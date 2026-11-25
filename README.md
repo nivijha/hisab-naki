@@ -32,11 +32,11 @@ npm install
 Copy-Item .env.example .env
 ```
 
-3. Generate Prisma client and run the schema:
+3. Generate Prisma client and run the schema (migrations are the source of truth; run them, not `db push`):
 
 ```bash
 npx prisma generate --schema prisma/schema.prisma
-npx prisma db push --schema prisma/schema.prisma
+npx prisma migrate deploy --schema prisma/schema.prisma
 npm run prisma:seed
 ```
 
