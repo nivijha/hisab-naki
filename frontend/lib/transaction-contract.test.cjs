@@ -4,12 +4,31 @@ const Module = require('node:module');
 const path = require('node:path');
 const test = require('node:test');
 const ts = require('typescript');
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
 
 function loadTypeScript(relativePath) {
   const filename = path.resolve(__dirname, relativePath);
   const source = fs.readFileSync(filename, 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const loaded = new Module(filename, module);
+  loaded.filename = filename;
+  loaded.paths = Module._nodeModulePaths(path.dirname(filename));
+  loaded._compile(output, filename);
+  return loaded.exports;
+}
+
+function loadTsx(relativePath) {
+  const filename = path.resolve(__dirname, relativePath);
+  const source = fs.readFileSync(filename, 'utf8');
+  const output = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
   }).outputText;
   const loaded = new Module(filename, module);
   loaded.filename = filename;
@@ -26,10 +45,12 @@ const {
   normalizeTransactionHistory,
   updateTransactionHistoryFilters,
 } = loadTypeScript('./transaction-contract.ts');
+const { TransactionDetailStatus, TransactionRowStatus } = loadTsx('../components/dashboard/transaction-status.tsx');
 
 const row = {
   id: 'txn-1',
   type: 'PAYMENT',
+  status: 'ACTIVE',
   amount: '125.50',
   description: null,
   createdAt: '2026-11-22T10:30:00.000Z',
@@ -58,6 +79,39 @@ test('normalizes a transaction detail response without inventing optional data',
   assert.equal(result.customerId, 'cust-1');
   assert.equal(result.description, '');
   assert.equal(normalizeTransaction({ ...row, id: '' }), null);
+});
+
+test('preserves ACTIVE and VOIDED status and rejects absent or unrecognized status', () => {
+  assert.equal(normalizeTransaction({ ...row, status: 'ACTIVE' }).status, 'ACTIVE');
+  assert.equal(normalizeTransaction({ ...row, status: 'VOIDED' }).status, 'VOIDED');
+  const { status: _status, ...withoutStatus } = row;
+  assert.equal(normalizeTransaction(withoutStatus), null);
+  assert.equal(normalizeTransaction({ ...row, status: null }), null);
+  assert.equal(normalizeTransaction({ ...row, status: 'PENDING' }), null);
+});
+
+test('renders an accessible voided label for history and customer-ledger rows', () => {
+  const markup = renderToStaticMarkup(React.createElement(TransactionRowStatus, { status: 'VOIDED' }));
+  assert.match(markup, /Voided · excluded from balance/);
+  assert.match(markup, /aria-label="Voided transaction; excluded from the outstanding balance"/);
+  assert.equal(renderToStaticMarkup(React.createElement(TransactionRowStatus, { status: 'ACTIVE' })), '');
+});
+
+test('renders explicit active and voided transaction-detail status', () => {
+  const voided = renderToStaticMarkup(React.createElement(TransactionDetailStatus, { status: 'VOIDED' }));
+  const active = renderToStaticMarkup(React.createElement(TransactionDetailStatus, { status: 'ACTIVE' }));
+  assert.match(voided, /Voided · excluded from balance/);
+  assert.match(voided, /aria-label="Voided transaction; excluded from the outstanding balance"/);
+  assert.match(active, />Active</);
+});
+
+test('dashboard uses the shared voided row status in history and customer ledgers without financial writes', () => {
+  const dashboard = fs.readFileSync(path.resolve(__dirname, '../app/dashboard/page.tsx'), 'utf8');
+  assert.match(dashboard, /<TransactionRowStatus status=\{transaction\.status\} \/>/);
+  assert.match(dashboard, /<TransactionRows transactions=\{ledger\.transactions\} customerLedger \/>/);
+  assert.match(dashboard, /<TransactionRows transactions=\{transactions\}/);
+  assert.doesNotMatch(dashboard, /requestJson\(['"]\/api\/transactions['"]\s*,\s*\{\s*method:\s*['"]POST['"]/);
+  assert.doesNotMatch(dashboard, /\/api\/preview\/[^'"\s]+\/(?:confirm|cancel)/);
 });
 
 test('rejects malformed page metadata and malformed transaction rows', () => {

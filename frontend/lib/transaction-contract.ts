@@ -1,5 +1,6 @@
 export type NormalizedTransaction = {
   id: string;
+  status: TransactionStatus;
   customerId?: string | null;
   customer?: { name: string } | null;
   description: string;
@@ -7,6 +8,8 @@ export type NormalizedTransaction = {
   type: string;
   createdAt: string;
 };
+
+export type TransactionStatus = 'ACTIVE' | 'VOIDED';
 
 export type TransactionHistoryResponse = {
   transactions: NormalizedTransaction[];
@@ -63,6 +66,7 @@ export function normalizeTransaction(value: unknown): NormalizedTransaction | nu
   const kinds = ['CREDIT', 'PAYMENT', 'SALE', 'EXPENSE', 'OPENING_BALANCE', 'SALE_RETURN', 'REFUND'];
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim()
     || typeof value.type !== 'string' || !kinds.includes(value.type)
+    || (value.status !== 'ACTIVE' && value.status !== 'VOIDED')
     || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))
     || (value.customerId !== undefined && value.customerId !== null && typeof value.customerId !== 'string')) return null;
   const amount = normalizeAmount(value.amount);
@@ -77,6 +81,7 @@ export function normalizeTransaction(value: unknown): NormalizedTransaction | nu
   else return null;
   return {
     id: value.id,
+    status: value.status,
     type: value.type,
     amount,
     description,

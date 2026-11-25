@@ -9,6 +9,7 @@ import { useAuth } from '@/components/auth/auth-provider';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { isSupportedPreviewWrite, normalizeTransactionPreview, type TransactionPreview } from '@/lib/preview-contract';
 import { VoiceWaveform } from '@/components/ui/voice-waveform';
+import { TransactionDetailStatus, TransactionRowStatus } from '@/components/dashboard/transaction-status';
 import {
   buildTransactionHistoryPath,
   isValidManualAmount,
@@ -260,12 +261,15 @@ function TransactionRows({ transactions, customerLedger = false, onViewDetails }
             </p>
           </div>
           <div className="max-w-full shrink-0 text-left sm:max-w-[50%] sm:text-right">
-            <p className="whitespace-nowrap text-xs font-bold text-forest sm:text-sm">{formatCurrency(transaction.amount)}</p>
-            <p className={`mt-0.5 inline-block max-w-full rounded-full px-2 text-xs font-medium ${
-              transaction.type === 'PAYMENT' ? 'bg-purple/10 text-forest' : transaction.type === 'CREDIT' ? 'bg-beige text-forest' : 'text-muted'
-            }`}>
-              {transaction.type === 'PAYMENT' ? 'Repayment' : transaction.type === 'CREDIT' ? 'Credit' : transaction.type}
+            <p className={`whitespace-nowrap text-xs font-bold sm:text-sm ${transaction.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>
+              {formatCurrency(transaction.amount)}
             </p>
+            <p className={`mt-0.5 inline-block max-w-full rounded-full px-2 text-xs font-medium ${
+              transaction.status === 'VOIDED' ? 'bg-beige-light text-muted' : transaction.type === 'PAYMENT' ? 'bg-purple/10 text-forest' : transaction.type === 'CREDIT' ? 'bg-beige text-forest' : 'text-muted'
+            }`}>
+              {transaction.status === 'VOIDED' ? `Voided ${transaction.type === 'PAYMENT' ? 'repayment' : transaction.type.toLowerCase()}` : transaction.type === 'PAYMENT' ? 'Repayment' : transaction.type === 'CREDIT' ? 'Credit' : transaction.type}
+            </p>
+            <TransactionRowStatus status={transaction.status} />
             {onViewDetails && <Button type="button" variant="link" size="sm" className="mt-1 min-h-11 px-0 underline" aria-label={`View details for transaction ${transaction.id}`} onClick={event => onViewDetails(transaction.id, event.currentTarget)}>Details</Button>}
           </div>
         </li>
@@ -288,7 +292,8 @@ function TransactionDetails({ id, onClose }: { id: string; onClose: () => void }
       ) : detail ? (
         <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
           <dt className="font-medium text-muted">Type</dt><dd className="font-semibold text-forest">{detail.type === 'PAYMENT' ? 'Repayment' : detail.type === 'CREDIT' ? 'Credit' : detail.type}</dd>
-          <dt className="font-medium text-muted">Amount</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">{formatCurrency(detail.amount)}</dd>
+          <dt className="font-medium text-muted">Status</dt><dd><TransactionDetailStatus status={detail.status} /></dd>
+          <dt className="font-medium text-muted">Amount</dt><dd className={`whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold ${detail.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>{formatCurrency(detail.amount)}</dd>
           <dt className="font-medium text-muted">Customer</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.customer?.name || 'No customer linked'}</dd>
           <dt className="font-medium text-muted">Date</dt><dd className="text-forest">{formatDate(detail.createdAt)}</dd>
           <dt className="font-medium text-muted">Description</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.description || 'No description provided'}</dd>
@@ -421,12 +426,15 @@ export default function DashboardPage() {
   const [manualDescription, setManualDescription] = useState('');
   const [manualError, setManualError] = useState('');
   const [manualReview, setManualReview] = useState(false);
-  const [voicePhase, setVoicePhase] = useState<'idle' | 'listening' | 'processing' | 'preview' | 'error'>('idle');
+  const [voicePhase, setVoicePhase] = useState<'idle' | 'starting' | 'listening' | 'processing' | 'preview' | 'error'>('idle');
   const [voiceFeedback, setVoiceFeedback] = useState('Tap the microphone and speak naturally in Hindi or Hinglish.');
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voicePreview, setVoicePreview] = useState<TransactionPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const recognitionSequenceRef = useRef(0);
+  const recognitionStopRequestedRef = useRef(false);
+  const voiceMountedRef = useRef(false);
   const previewRequestRef = useRef<AbortController | null>(null);
   const previewRequestSequence = useRef(0);
   const [customerEditor, setCustomerEditor] = useState<{ mode: 'create' } | { mode: 'edit'; customerId: string } | null>(null);
@@ -552,8 +560,21 @@ export default function DashboardPage() {
   }, [businessContextGeneration, selectedBusinessId]);
 
   const startVoiceCapture = () => {
-    if (voicePhase === 'listening') {
-      recognitionRef.current?.stop();
+    const activeRecognition = recognitionRef.current;
+    if (activeRecognition) {
+      if (voicePhase === 'listening' && !recognitionStopRequestedRef.current) {
+        recognitionStopRequestedRef.current = true;
+        setVoiceFeedback('Stopping listening…');
+        try {
+          activeRecognition.stop();
+        } catch {
+          recognitionRef.current = null;
+          recognitionSequenceRef.current += 1;
+          recognitionStopRequestedRef.current = false;
+          setVoicePhase('error');
+          setVoiceFeedback('Speech capture could not stop cleanly. Try again.');
+        }
+      }
       return;
     }
     if (previewBusy || voicePreview) return;
@@ -565,20 +586,31 @@ export default function DashboardPage() {
       return;
     }
     setVoiceTranscript('');
-    setVoicePhase('listening');
-    setVoiceFeedback('Listening. Speak one transaction or question.');
+    setVoicePhase('starting');
+    setVoiceFeedback('Starting microphone…');
     try {
       const recognition = new Constructor();
+      const sequence = ++recognitionSequenceRef.current;
+      const contextKey = `${selectedBusinessId}:${businessContextGeneration}`;
+      const isCurrentCapture = () => voiceMountedRef.current
+        && recognitionSequenceRef.current === sequence
+        && recognitionRef.current === recognition
+        && previewContextRef.current === contextKey;
       recognitionRef.current = recognition;
+      recognitionStopRequestedRef.current = false;
       recognition.lang = 'hi-IN';
       recognition.interimResults = false;
       recognition.continuous = false;
       recognition.onstart = () => {
+        if (!isCurrentCapture()) return;
         setVoicePhase('listening');
         setVoiceFeedback('Listening. Speak one transaction or question.');
       };
       recognition.onresult = event => {
+        if (!isCurrentCapture()) return;
         const transcript = Array.from(event.results).filter(result => result.isFinal).map(result => result[0]?.transcript ?? '').join(' ').trim();
+        recognitionRef.current = null;
+        recognitionSequenceRef.current += 1;
         if (!transcript) {
           setVoicePhase('error');
           setVoiceFeedback('No clear speech was captured. Try speaking again.');
@@ -588,23 +620,42 @@ export default function DashboardPage() {
         void requestVoicePreview(transcript);
       };
       recognition.onerror = event => {
+        if (!isCurrentCapture()) return;
+        recognitionRef.current = null;
+        recognitionSequenceRef.current += 1;
+        recognitionStopRequestedRef.current = false;
+        if (event.error === 'aborted') {
+          setVoicePhase('idle');
+          setVoiceFeedback('Speech capture stopped. You can try again when ready.');
+          return;
+        }
         const message = event.error === 'not-allowed' || event.error === 'service-not-allowed'
           ? 'Microphone permission was denied. Allow microphone access in your browser settings and try again.'
           : event.error === 'audio-capture'
             ? 'No microphone was available. Check your device and try again.'
+            : event.error === 'network'
+              ? 'Speech recognition could not connect. Check your internet connection and try again.'
             : event.error === 'no-speech'
               ? 'No speech was heard. Try again when you are ready.'
-              : 'Speech recognition stopped before a transcript was ready. Please try again.';
+              : event.error === 'nomatch'
+                ? 'Speech was heard but not recognized. Try speaking more clearly.'
+                : 'Speech recognition stopped before a transcript was ready. Please try again.';
         setVoicePhase('error');
         setVoiceFeedback(message);
       };
       recognition.onend = () => {
+        if (!isCurrentCapture()) return;
         recognitionRef.current = null;
-        setVoicePhase(current => current === 'listening' ? 'idle' : current);
+        recognitionSequenceRef.current += 1;
+        recognitionStopRequestedRef.current = false;
+        setVoicePhase('idle');
+        setVoiceFeedback('Listening stopped without a transcript. Try again when you are ready.');
       };
       recognition.start();
     } catch {
       recognitionRef.current = null;
+      recognitionSequenceRef.current += 1;
+      recognitionStopRequestedRef.current = false;
       setVoicePhase('error');
       setVoiceFeedback('The microphone could not start. Check browser permission and try again.');
     }
@@ -618,6 +669,11 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    recognitionSequenceRef.current += 1;
+    const activeRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognitionStopRequestedRef.current = false;
+    activeRecognition?.abort();
     setVoicePreview(null);
     setVoiceTranscript('');
     setPreviewBusy(false);
@@ -625,14 +681,20 @@ export default function DashboardPage() {
     setVoiceFeedback('Tap the microphone and speak naturally in Hindi or Hinglish.');
     previewRequestSequence.current += 1;
     previewRequestRef.current?.abort();
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
   }, [selectedBusinessId, businessContextGeneration]);
 
-  useEffect(() => () => {
-    previewRequestSequence.current += 1;
-    previewRequestRef.current?.abort();
-    recognitionRef.current?.abort();
+  useEffect(() => {
+    voiceMountedRef.current = true;
+    return () => {
+      voiceMountedRef.current = false;
+      recognitionSequenceRef.current += 1;
+      previewRequestSequence.current += 1;
+      previewRequestRef.current?.abort();
+      const activeRecognition = recognitionRef.current;
+      recognitionRef.current = null;
+      recognitionStopRequestedRef.current = false;
+      activeRecognition?.abort();
+    };
   }, []);
 
   const updateSearch = (value: string) => {
@@ -1016,7 +1078,7 @@ export default function DashboardPage() {
               <span className="mic-motion mr-2 flex h-7 w-7 items-center justify-center">
                 <Mic aria-hidden="true" className="h-5 w-5" />
               </span>
-              {voicePhase === 'listening' ? 'Stop listening' : 'Start speaking'}
+              {voicePhase === 'listening' ? 'Stop listening' : voicePhase === 'starting' ? 'Starting microphone…' : 'Start speaking'}
             </Button>
             <a href="#customers" className="inline-flex min-h-11 items-center rounded-sm px-2 text-sm font-medium text-forest underline underline-offset-4 hover:bg-beige-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
               Find customer
