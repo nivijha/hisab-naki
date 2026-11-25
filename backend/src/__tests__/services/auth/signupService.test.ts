@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+<<<<<<< HEAD
 import {
   assertOtpHashSecretConfigured,
   createOtpCodeHash,
@@ -10,6 +11,10 @@ import {
   type SignupChallenge,
   type SignupRepository,
 } from '../../../services/auth/signupService.js';
+=======
+import { createOtpCodeHash, createSignupService, PrismaSignupRepository, type OtpDelivery, type SignupChallenge, type SignupRepository } from '../../../services/auth/signupService.js';
+import type { PrismaClient } from '@prisma/client';
+>>>>>>> 6c993a36fb96d59d5ef8392d70155ad5d31fc029
 import { HttpError } from '../../../middleware/authenticate.js';
 
 const SECRET = 'signup-tests-hash-secret-that-is-32-chars-minimum';
@@ -86,6 +91,8 @@ describe('signup service', () => {
     assert.equal(repository.challenge?.codeHash, createOtpCodeHash(PHONE, '004201', SECRET));
     assert.notEqual(repository.challenge?.codeHash, '004201');
     assert.equal(repository.challenge?.signupPasswordHash, 'test-hash:long-test-password');
+    assert.equal(repository.userCreated, false);
+    assert.ok(repository.challenge, 'registration must leave a pending challenge before verification');
     assert.equal(delivery.sent[0].code, '004201');
     assert.equal(JSON.stringify(result).includes('004201'), false);
   });
@@ -102,6 +109,20 @@ describe('signup service', () => {
     const { service, delivery } = setup({ repository });
     await expectHttpError(service.register({ name: 'Different Name', phone: PHONE, password: 'long-test-password' }), 409, /cannot be registered/);
     assert.equal(delivery.sent.length, 0);
+  });
+
+  it('serializes concurrent registration attempts and sends only one code', async () => {
+    const repository = new FakeSignupRepository();
+    const { service, delivery } = setup({ repository });
+    const attempts = await Promise.allSettled([
+      service.register({ name: 'First Shopkeeper', phone: PHONE, password: 'long-test-password' }),
+      service.register({ name: 'Second Shopkeeper', phone: PHONE, password: 'another-long-password' }),
+    ]);
+    assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(attempts.filter(result => result.status === 'rejected').length, 1);
+    assert.equal(repository.userCreated, false);
+    assert.ok(repository.challenge);
+    assert.equal(delivery.sent.length, 1);
   });
 
   it('rejects wrong codes and creates the account only after valid verification', async () => {
@@ -163,6 +184,7 @@ describe('signup service', () => {
   });
 });
 
+<<<<<<< HEAD
 describe('maskPhone', () => {
   it('masks a normal Indian number keeping only the last four digits', () => {
     const masked = maskPhone('9876543210');
@@ -241,5 +263,59 @@ describe('OTP_HASH_SECRET configuration', () => {
   it('rejects a weak OTP_HASH_SECRET in development', () => {
     setEnv({ NODE_ENV: 'development', OTP_HASH_SECRET: 'weak' });
     assert.throws(() => resolveOtpHashSecret(), /OTP_HASH_SECRET must be at least 32 characters/);
+=======
+describe('Prisma signup advisory locks', () => {
+  function makeClient(options: { failInsert?: boolean } = {}) {
+    const committedStatements: string[] = [];
+    const client = {
+      user: { findUnique: async () => null },
+      $transaction: async (operation: (tx: unknown) => Promise<unknown>) => {
+        const transactionStatements: string[] = [];
+        const tx = {
+          $queryRaw: async (strings: TemplateStringsArray) => {
+            const sql = strings.join('?');
+            if (sql.includes('pg_advisory_xact_lock')) {
+              const error = new Error('Failed to deserialize column of type void') as Error & { code?: string };
+              error.name = 'PrismaClientKnownRequestError';
+              error.code = 'P2010';
+              throw error;
+            }
+            if (sql.includes('FROM "OtpChallenge"')) return [];
+            throw new Error('Unexpected raw query in test');
+          },
+          $executeRaw: async (strings: TemplateStringsArray) => {
+            const sql = strings.join('?');
+            transactionStatements.push(sql);
+            if (options.failInsert && sql.includes('INSERT INTO "OtpChallenge"')) throw new Error('simulated insert failure');
+            return 1;
+          },
+        };
+        const result = await operation(tx);
+        committedStatements.push(...transactionStatements);
+        return result;
+      },
+    } as unknown as PrismaClient;
+    return { client, committedStatements };
+  }
+
+  it('executes the void-returning lock without Prisma result deserialization', async () => {
+    const { client, committedStatements } = makeClient();
+    const repository = new PrismaSignupRepository(client);
+    await repository.createPendingSignup({ name: 'Nivi', phone: PHONE, passwordHash: 'password-hash', codeHash: 'code-hash', expiresAt: NOW });
+    assert.equal(committedStatements.filter(sql => sql.includes('pg_advisory_xact_lock')).length, 1);
+    assert.equal(committedStatements.filter(sql => sql.includes('INSERT INTO "OtpChallenge"')).length, 1);
+  });
+
+  it('uses the same transaction-scoped lock for resend and rolls back failed inserts', async () => {
+    const resendClient = makeClient();
+    const resendRepository = new PrismaSignupRepository(resendClient.client);
+    await resendRepository.createReplacementChallenge(PHONE, 'next-code-hash', NOW);
+    assert.equal(resendClient.committedStatements.filter(sql => sql.includes('pg_advisory_xact_lock')).length, 1);
+
+    const failingClient = makeClient({ failInsert: true });
+    const failingRepository = new PrismaSignupRepository(failingClient.client);
+    await assert.rejects(failingRepository.createPendingSignup({ name: 'Nivi', phone: PHONE, passwordHash: 'password-hash', codeHash: 'code-hash', expiresAt: NOW }), /simulated insert failure/);
+    assert.deepEqual(failingClient.committedStatements, []);
+>>>>>>> 6c993a36fb96d59d5ef8392d70155ad5d31fc029
   });
 });
