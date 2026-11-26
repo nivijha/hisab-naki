@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import type { Customer } from '@prisma/client';
 import { HttpError } from '../../../middleware/authenticate.js';
 import { interpretTranscript } from '../../../services/ai/intentService.js';
 import {
@@ -14,6 +15,23 @@ import type { ParsedIntent } from '../../../services/ai/intentService.js';
 
 const CONTEXT: PreviewTenantContext = { businessId: 'biz-1', createdByUserId: 'user-1' };
 const OTHER_CONTEXT: PreviewTenantContext = { businessId: 'biz-2', createdByUserId: 'user-2' };
+const CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
+
+function makeCustomer(overrides: Partial<Customer> = {}): Customer {
+  return {
+    id: 'cust-new',
+    businessId: CONTEXT.businessId,
+    name: 'Raju',
+    phone: null,
+    email: null,
+    notes: null,
+    createdByUserId: CONTEXT.createdByUserId,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    deletedAt: null,
+    ...overrides,
+  };
+}
 
 function makeParsed(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
   return {
@@ -145,7 +163,7 @@ describe('preview service', () => {
   it('explicit customer creation does not commit financial transaction and revalidates preview', async () => {
     const service = createPreviewService(new InMemoryPreviewStore(), {
       resolveCustomerForVoice: async () => ({ status: 'unknown', matches: [] }),
-      createCustomerForVoice: async () => ({ ok: true, customer: { id: 'cust-new', name: 'Raju', phone: null }, created: true }),
+      createCustomerForVoice: async () => ({ ok: true, customer: makeCustomer({ id: 'cust-new', name: 'Raju' }), created: true }),
     });
     const preview = await service.createPreviewFromTranscript('Raju ko 500 udhaar diya', CONTEXT);
     let commitCalls = 0;
@@ -162,7 +180,7 @@ describe('preview service', () => {
 
   it('ADD_CUSTOMER intent requires explicit approval and never confirms as financial tx', async () => {
     const service = createPreviewService(new InMemoryPreviewStore());
-    const preview = service.createPreview(makeParsed({ intent: 'ADD_CUSTOMER', amount: undefined, type: undefined, missingFields: [], customerName: 'Rahul' }), CONTEXT);
+    const preview = service.createPreview(makeParsed({ intent: 'ADD_CUSTOMER', amount: undefined, missingFields: [], customerName: 'Rahul' }), CONTEXT);
     const result = await service.confirmPreview(preview.id, async () => ({}), CONTEXT);
     assert.strictEqual(result.ok, false);
     if (!result.ok) assert.strictEqual(result.code, 'READ_ONLY_INTENT');
