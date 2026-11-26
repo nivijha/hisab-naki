@@ -55,7 +55,10 @@ export function isPrototypeSignupEnabled(): boolean {
 }
 
 export function assertPrototypeSignupNotEnabledInProduction(): void {
-  if (isPrototypeSignupEnabled() && process.env.NODE_ENV === 'production') {
+  if (!isPrototypeSignupEnabled()) return;
+  const nodeEnv = process.env.NODE_ENV?.trim().toLowerCase();
+  const appEnv = process.env.APP_ENV?.trim().toLowerCase();
+  if (nodeEnv === 'production' && appEnv !== 'staging') {
     throw new Error('PROTOTYPE_SIGNUP_ENABLED cannot be used in production.');
   }
 }
