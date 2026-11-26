@@ -7,3 +7,11 @@ export const createPreviewSchema = z.object({
 export const previewIdParamSchema = z.object({
   id: z.string().min(1, 'Preview ID is required.'),
 });
+
+export const resolvePreviewCustomerSchema = z.object({
+  customerId: z.string().min(1, 'Customer ID is required.'),
+});
+
+export const createPreviewCustomerSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+});

@@ -28,6 +28,26 @@ describe('AI intent service - interpretTranscript', () => {
     assert.deepStrictEqual(result.missingFields, []);
   });
 
+  it('recognizes Hindi add-customer command', async () => {
+    const result = await interpretTranscript('नया ग्राहक राहुल जोड़ो');
+    assert.strictEqual(result.intent, 'ADD_CUSTOMER');
+    assert.strictEqual(result.customerName, 'राहुल');
+    assert.strictEqual(result.confidence, 0.9);
+    assert.deepStrictEqual(result.missingFields, []);
+  });
+
+  it('recognizes Hindi "नाम का नया ग्राहक बनाओ" command', async () => {
+    const result = await interpretTranscript('राहुल नाम का नया ग्राहक बनाओ');
+    assert.strictEqual(result.intent, 'ADD_CUSTOMER');
+    assert.strictEqual(result.customerName, 'राहुल');
+  });
+
+  it('recognizes English add-customer command', async () => {
+    const result = await interpretTranscript('Add a new customer Rahul');
+    assert.strictEqual(result.intent, 'ADD_CUSTOMER');
+    assert.strictEqual(result.customerName, 'Rahul');
+  });
+
   it('returns ADD_CREDIT for English credit phrase', async () => {
     const result = await interpretTranscript('Raju owes 200 rupees.');
     assert.strictEqual(result.intent, 'ADD_CREDIT');

@@ -429,6 +429,7 @@ export default function DashboardPage() {
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voicePreview, setVoicePreview] = useState<TransactionPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewActionBusy, setPreviewActionBusy] = useState<'resolve' | 'create' | 'confirm' | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const recognitionSequenceRef = useRef(0);
   const recognitionStopRequestedRef = useRef(false);
@@ -527,16 +528,7 @@ export default function DashboardPage() {
       if (!isRecord(result) || result.ok !== true) throw new Error('The interpretation response was incomplete.');
       const preview = normalizeTransactionPreview(result.data, selectedBusinessId);
       if (!preview || preview.state !== 'pending') throw new Error('The server returned an incomplete or mismatched preview. Nothing was confirmed.');
-      setVoicePreview(preview);
-      setVoicePhase('preview');
-      const readOnlyIntent = readOnlyPreviewIntents.has(preview.intent);
-      setVoiceFeedback(isSupportedPreviewWrite(preview)
-        ? 'The server prepared a suggestion. Review the details below; confirmation is currently unavailable for safety.'
-        : readOnlyIntent && preview.confidence > 0
-          ? 'This is a read-only question. This preview does not fetch a live balance or transaction history, and nothing was recorded. Use Find customer to view the ledger.'
-          : readOnlyIntent
-            ? 'The server could not understand this request. No balance or transaction history was fetched, and nothing was recorded. Try speaking again or use Find customer.'
-            : 'The server could not prepare a complete transaction suggestion. Review the missing details below.');
+      applyPreviewResult(preview);
     } catch (error) {
       if (sequence !== previewRequestSequence.current || contextKey !== previewContextRef.current) return;
       if (controller.signal.aborted) {
@@ -687,6 +679,67 @@ export default function DashboardPage() {
     setVoiceTranscript('');
     setVoicePhase('idle');
     setVoiceFeedback('Preview cleared from this screen. The server-held preview remains until its configured expiry; no transaction was recorded.');
+  };
+
+  const runPreviewAction = async (action: 'resolve' | 'create' | 'confirm', body?: Record<string, unknown>) => {
+    if (!voicePreview || !selectedBusinessId) return;
+    const previewId = voicePreview.id;
+    const endpoint = action === 'resolve'
+      ? `/api/preview/${encodeURIComponent(previewId)}/resolve-customer`
+      : action === 'create'
+        ? `/api/preview/${encodeURIComponent(previewId)}/create-customer`
+        : `/api/preview/${encodeURIComponent(previewId)}/confirm`;
+    setPreviewActionBusy(action);
+    try {
+      const result = await apiClient.requestJson(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      });
+      if (!isRecord(result) || result.ok !== true) throw new ApiError('Preview action did not complete.', 'invalid-response');
+      const preview = normalizeTransactionPreview(result.data, selectedBusinessId);
+      if (!preview) throw new ApiError('The server returned an invalid preview response.', 'invalid-response');
+      applyPreviewResult(preview);
+      if (action === 'confirm' && preview.state === 'confirmed') {
+        setVoiceFeedback('Transaction confirmed. The ledger was updated only after your explicit confirmation.');
+        void loadDashboard(true);
+        void loadCustomers(true);
+        void loadTransactions(true);
+      }
+    } catch (error) {
+      setVoicePhase('error');
+      setVoiceFeedback(error instanceof ApiError ? error.message : 'Preview action failed. Nothing was confirmed.');
+    } finally {
+      setPreviewActionBusy(null);
+    }
+  };
+
+  const applyPreviewResult = (preview: TransactionPreview) => {
+    setVoicePreview(preview);
+    setVoicePhase('preview');
+    const resolution = preview.customerResolution;
+    if (preview.intent === 'ADD_CUSTOMER') {
+      setVoiceFeedback(resolution?.status === 'created'
+        ? 'Customer created. Review the preview; no transaction was recorded. Add a transaction separately after explicit confirmation.'
+        : 'Customer creation requires your explicit approval. No customer or transaction has been created yet.');
+      return;
+    }
+    if (resolution?.status === 'ambiguous') {
+      setVoiceFeedback('Multiple customers match this name. Select the correct customer before confirming any transaction.');
+      return;
+    }
+    if (resolution?.status === 'unknown') {
+      setVoiceFeedback('No matching customer was found in this business. You can explicitly create the customer, then confirm the transaction separately.');
+      return;
+    }
+    const readOnlyIntent = readOnlyPreviewIntents.has(preview.intent);
+    setVoiceFeedback(isSupportedPreviewWrite(preview)
+      ? 'Preview is ready. Review the details below and confirm only if everything is correct.'
+      : readOnlyIntent && preview.confidence > 0
+        ? 'This is a read-only question. This preview does not fetch a live balance or transaction history, and nothing was recorded. Use Find customer to view the ledger.'
+        : readOnlyIntent
+          ? 'The server could not understand this request. No balance or transaction history was fetched, and nothing was recorded. Try speaking again or use Find customer.'
+          : 'The server could not prepare a complete transaction suggestion. Review the missing details below.');
   };
 
   useEffect(() => {
@@ -1138,13 +1191,46 @@ export default function DashboardPage() {
               <dt className="font-medium text-muted">Prepared</dt><dd className="text-forest">{formatDate(voicePreview.createdAt)}</dd>
             </dl>
             {previewDirection && <p className="rounded-md bg-beige-light p-3 text-sm text-forest">{previewDirection}</p>}
+            {voicePreview.customerResolution?.status === 'ambiguous' && (
+              <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
+                <p className="font-medium">Multiple matching customers found. Select the correct one:</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {voicePreview.customerResolution.candidates.map((candidate) => (
+                    <Button key={candidate.id} type="button" variant="outline" disabled={previewActionBusy !== null} onClick={() => void runPreviewAction('resolve', { customerId: candidate.id })}>
+                      {candidate.name}{candidate.phone ? ` · ${candidate.phone}` : ''}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {voicePreview.customerResolution?.status === 'unknown' && (
+              <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
+                <p className="font-medium">No matching customer found in this business.</p>
+                <p className="mt-1">Create &quot;{voicePreview.customerResolution.requestedName ?? voicePreview.customerName}&quot; only if you explicitly approve. Customer creation does not record a transaction.</p>
+                <div className="mt-2">
+                  <Button type="button" disabled={previewActionBusy !== null || !voicePreview.customerResolution.requestedName} onClick={() => void runPreviewAction('create', { name: voicePreview.customerResolution?.requestedName ?? voicePreview.customerName })}>
+                    {previewActionBusy === 'create' ? 'Creating customer…' : 'Create customer'}
+                  </Button>
+                </div>
+              </div>
+            )}
             {voicePreview.missingFields.length > 0 && <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
               <p className="font-medium">The parser reports missing information:</p>
               <ul className="mt-1 list-inside list-disc">{voicePreview.missingFields.map((field, index) => <li key={`${field}-${index}`} className="break-words">{field}</li>)}</ul>
             </div>}
-            {voicePreview.customerName && <p className="text-xs text-muted">The preview identifies a customer by name only. It does not include a verified customer ID; duplicate names cannot be resolved safely here.</p>}
-            <p className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">Financial confirmation is unavailable while parser accuracy, customer identity, amount precision, and durable outcome recovery remain unresolved. The preview API does not provide an expiry timestamp.</p>
-    <Button type="button" variant="outline" onClick={clearVoicePreview}>Clear preview</Button>
+            {isSupportedPreviewWrite(voicePreview) && (
+              <p className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
+                Review carefully. Confirming will record this financial transaction.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {isSupportedPreviewWrite(voicePreview) && (
+                <Button type="button" disabled={previewActionBusy !== null} onClick={() => void runPreviewAction('confirm')}>
+                  {previewActionBusy === 'confirm' ? 'Confirming…' : 'Confirm transaction'}
+                </Button>
+              )}
+              <Button type="button" variant="outline" disabled={previewActionBusy !== null} onClick={clearVoicePreview}>Clear preview</Button>
+            </div>
           </section>}
         </div>
       </ScrollReveal>

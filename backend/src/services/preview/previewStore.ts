@@ -23,17 +23,37 @@ export type PreviewTenantContext = {
 
 export type PreviewState = 'pending' | 'confirming' | 'confirmed' | 'cancelled';
 
+export type CustomerResolutionState = 'matched' | 'unknown' | 'ambiguous' | 'not_required' | 'created';
+
+export type CustomerResolutionCandidate = {
+  id: string;
+  name: string;
+  phone: string | null;
+};
+
+export type CustomerResolution = {
+  status: CustomerResolutionState;
+  requestedName?: string;
+  customerId?: string;
+  customerName?: string;
+  candidates: CustomerResolutionCandidate[];
+  requiresCustomerCreationApproval?: boolean;
+  requiresCustomerDisambiguation?: boolean;
+};
+
 export type TransactionPreview = {
   id: string;
   businessId: string;
   createdByUserId: string;
   intent: ParsedIntent['intent'];
   customerName?: string;
+  customerId?: string;
   amount?: number;
   type?: TransactionType;
   description?: string;
   confidence: number;
   missingFields: string[];
+  customerResolution?: CustomerResolution;
   readyForConfirmation: boolean;
   state: PreviewState;
   createdAt: string;

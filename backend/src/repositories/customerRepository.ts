@@ -19,8 +19,13 @@ export type DeleteCustomerOutcome =
   | { status: 'DELETED' }
   | { status: 'NOT_FOUND' };
 
+export type CreateCustomerIfNotExistsResult =
+  | { status: 'CREATED'; customer: Customer }
+  | { status: 'EXACT_MATCH'; customer: Customer };
+
 export interface CustomerRepository {
   create(input: CreateCustomerInput): Promise<Customer>;
+  createIfNotExistsByName(input: CreateCustomerInput): Promise<CreateCustomerIfNotExistsResult>;
   update(
     businessId: string,
     customerId: string,
@@ -30,6 +35,7 @@ export interface CustomerRepository {
   findById(businessId: string, customerId: string): Promise<CustomerWithTransactions | null>;
   findByName(businessId: string, customerName: string): Promise<CustomerWithTransactions | null>;
   findByNameForDuplicateCheck(businessId: string, customerName: string): Promise<Customer | null>;
+  findCandidatesByName(businessId: string, customerName: string): Promise<Customer[]>;
   listForBusiness(businessId: string): Promise<CustomerWithTransactions[]>;
 }
 
@@ -44,6 +50,38 @@ export class PrismaCustomerRepository implements CustomerRepository {
         name: input.name,
         phone: input.phone ?? null,
       },
+    });
+  }
+
+  async createIfNotExistsByName(input: CreateCustomerInput): Promise<CreateCustomerIfNotExistsResult> {
+    const normalizedName = input.name.trim();
+    const id = input['id' as never] as string | undefined;
+    void id;
+
+    return this.client.$transaction(async (tx) => {
+      // Serialize same-name customer creation in active business scope.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`customer:${input.businessId}:${normalizedName.toLowerCase()}`}))`;
+
+      const existing = await tx.customer.findFirst({
+        where: {
+          businessId: input.businessId,
+          deletedAt: null,
+          name: { equals: normalizedName, mode: 'insensitive' },
+        },
+      });
+      if (existing) {
+        return { status: 'EXACT_MATCH', customer: existing };
+      }
+
+      const customer = await tx.customer.create({
+        data: {
+          businessId: input.businessId,
+          createdByUserId: input.createdByUserId,
+          name: normalizedName,
+          phone: input.phone ?? null,
+        },
+      });
+      return { status: 'CREATED', customer };
     });
   }
 
@@ -108,6 +146,19 @@ export class PrismaCustomerRepository implements CustomerRepository {
         deletedAt: null,
         name: { equals: customerName, mode: 'insensitive' },
       },
+    });
+  }
+
+  findCandidatesByName(businessId: string, customerName: string): Promise<Customer[]> {
+    const normalized = customerName.trim();
+    return this.client.customer.findMany({
+      where: {
+        businessId,
+        deletedAt: null,
+        name: { contains: normalized, mode: 'insensitive' },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 10,
     });
   }
 

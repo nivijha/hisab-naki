@@ -90,6 +90,22 @@ export function createPreviewController(services: PreviewControllerServices = de
     return respondWithResult(res, services.previewService.cancelPreviewResult(id, context));
   }
 
+  async function resolveCustomerHandler(req: Request, res: Response) {
+    const { businessId, userId } = requireAuth(req);
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+    const context: PreviewTenantContext = { businessId, createdByUserId: userId };
+    const { customerId } = req.body ?? {};
+    return respondWithResult(res, await services.previewService.resolveCustomerForPreview(id, context, String(customerId ?? '')));
+  }
+
+  async function createCustomerHandler(req: Request, res: Response) {
+    const { businessId, userId } = requireAuth(req);
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
+    const context: PreviewTenantContext = { businessId, createdByUserId: userId };
+    const { name } = req.body ?? {};
+    return respondWithResult(res, await services.previewService.createCustomerForPreview(id, context, typeof name === 'string' ? name : undefined));
+  }
+
   async function confirmPreviewHandler(req: Request, res: Response) {
     const { businessId, userId } = requireAuth(req);
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id ?? '';
@@ -107,6 +123,8 @@ export function createPreviewController(services: PreviewControllerServices = de
     createPreviewHandler,
     getPreviewHandler,
     cancelPreviewHandler,
+    resolveCustomerHandler,
+    createCustomerHandler,
     confirmPreviewHandler,
   };
 }

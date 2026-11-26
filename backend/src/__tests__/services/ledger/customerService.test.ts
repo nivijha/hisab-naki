@@ -5,6 +5,7 @@ import type { Customer, Transaction } from '@prisma/client';
 import { createCustomerService } from '../../../services/ledger/customerService.js';
 import { calculateOutstandingAmount } from '../../../utils/ledger.js';
 import type {
+  CreateCustomerIfNotExistsResult,
   CreateCustomerInput,
   CustomerRepository,
   CustomerWithTransactions,
@@ -82,6 +83,13 @@ class InMemoryCustomerRepository implements CustomerRepository {
     return customer;
   }
 
+  async createIfNotExistsByName(input: CreateCustomerInput): Promise<CreateCustomerIfNotExistsResult> {
+    const existing = this.findByCaseInsensitiveName(input.businessId, input.name.trim());
+    if (existing) return { status: 'EXACT_MATCH', customer: existing };
+    const customer = await this.create(input);
+    return { status: 'CREATED', customer };
+  }
+
   async update(
     businessId: string,
     customerId: string,
@@ -121,6 +129,13 @@ class InMemoryCustomerRepository implements CustomerRepository {
 
   async findByNameForDuplicateCheck(businessId: string, customerName: string): Promise<Customer | null> {
     return this.findByCaseInsensitiveName(businessId, customerName);
+  }
+
+  async findCandidatesByName(businessId: string, customerName: string): Promise<Customer[]> {
+    const lower = customerName.trim().toLowerCase();
+    return [...this.customers.values()].filter(
+      (c) => c.businessId === businessId && c.deletedAt === null && c.name.toLowerCase().includes(lower)
+    );
   }
 
   async listForBusiness(businessId: string): Promise<CustomerWithTransactions[]> {
@@ -290,11 +305,13 @@ describe('customer service - business-scoped reads', () => {
   it('repository errors propagate through the service', async () => {
     const failingRepo: CustomerRepository = {
       create: async () => { throw new Error('DB down'); },
+      createIfNotExistsByName: async () => { throw new Error('DB down'); },
       update: async () => { throw new Error('DB down'); },
       delete: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
+      findCandidatesByName: async () => { throw new Error('DB down'); },
       listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);
@@ -420,11 +437,13 @@ describe('customer service - business-scoped updateCustomer', () => {
   it('9. repository errors propagate correctly', async () => {
     const failingRepo: CustomerRepository = {
       create: async () => { throw new Error('DB down'); },
+      createIfNotExistsByName: async () => { throw new Error('DB down'); },
       update: async () => { throw new Error('DB down'); },
       delete: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
+      findCandidatesByName: async () => { throw new Error('DB down'); },
       listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);
@@ -662,11 +681,13 @@ describe('customer service - business-scoped deleteCustomer', () => {
   it('6. repository errors propagate correctly', async () => {
     const failingRepo: CustomerRepository = {
       create: async () => { throw new Error('DB down'); },
+      createIfNotExistsByName: async () => { throw new Error('DB down'); },
       update: async () => { throw new Error('DB down'); },
       delete: async () => { throw new Error('DB down'); },
       findById: async () => { throw new Error('DB down'); },
       findByName: async () => { throw new Error('DB down'); },
       findByNameForDuplicateCheck: async () => { throw new Error('DB down'); },
+      findCandidatesByName: async () => { throw new Error('DB down'); },
       listForBusiness: async () => { throw new Error('DB down'); },
     };
     const service = createCustomerService(failingRepo);

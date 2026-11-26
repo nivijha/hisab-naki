@@ -27,8 +27,10 @@ function makeParsed(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
 
 describe('preview service - concurrency hardening', () => {
   it('two simultaneous confirmation requests: only one commits', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => {
       commitCalls += 1;
@@ -50,8 +52,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('a subsequent confirmation after an in-flight one gets a conflict', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let releaseCommit: () => void = () => {};
     const gate = new Promise<void>((resolve) => { releaseCommit = resolve; });
     let commitCalls = 0;
@@ -76,8 +80,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('commit failure returns COMMIT_FAILED and restores a retryable state', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let commitCalls = 0;
     const failingCommitter: TransactionCommitter = async () => {
       commitCalls += 1;
@@ -97,8 +103,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('retrying after a failed commit succeeds and commits exactly once more', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let commitCalls = 0;
     const flakyCommitter: TransactionCommitter = async () => {
       commitCalls += 1;
@@ -117,8 +125,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('a failed commit is never marked confirmed', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const committer: TransactionCommitter = async () => { throw new Error('failure'); };
     await service.confirmPreview(preview.id, committer, CONTEXT);
     const current = service.getPreview(preview.id, CONTEXT);
@@ -127,8 +137,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('a context mismatch never claims the preview', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
 
@@ -141,8 +153,10 @@ describe('preview service - concurrency hardening', () => {
   });
 
   it('committed transaction input always uses the stored tenant context', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const calls: CreateTransactionInput[] = [];
     const committer: TransactionCommitter = async (input) => { calls.push(input); return {}; };
 
@@ -163,8 +177,10 @@ describe('preview service - expiry', () => {
 
   it('a valid preview remains usable before expiry', async () => {
     const nowRef = { value: START };
-    const service = makeService(nowRef);
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store, { ttlMs: TTL, now: () => nowRef.value });
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     nowRef.value = START + TTL - 1;
     const result = await service.confirmPreview(preview.id, async () => ({ ok: true }), CONTEXT);
     assert.strictEqual(result.ok, true);

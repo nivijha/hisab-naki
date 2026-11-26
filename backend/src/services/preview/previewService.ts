@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { ParsedIntent } from '../ai/intentService.js';
 import { interpretTranscript } from '../ai/intentService.js';
 import type { CreateTransactionInput } from '../ledger/transactionService.js';
+import { createCustomerForVoice, resolveCustomerForVoice } from '../ledger/customerService.js';
 import { HttpError } from '../../middleware/authenticate.js';
 import { PreviewStoreFullError } from './previewStore.js';
 import {
   READ_INTENTS,
   WRITE_INTENTS,
+  type CustomerResolution,
   type PreviewStore,
   type PreviewTenantContext,
   type TransactionPreview,
@@ -35,6 +37,8 @@ export type ConfirmResult =
 export type PreviewServiceOptions = {
   ttlMs?: number;
   now?: () => number;
+  resolveCustomerForVoice?: typeof resolveCustomerForVoice;
+  createCustomerForVoice?: typeof createCustomerForVoice;
 };
 
 function isWriteIntent(intent: ParsedIntent['intent']): boolean {
@@ -43,6 +47,14 @@ function isWriteIntent(intent: ParsedIntent['intent']): boolean {
 
 function isReadIntent(intent: ParsedIntent['intent']): boolean {
   return (READ_INTENTS as readonly string[]).includes(intent);
+}
+
+function intentRequiresCustomer(intent: ParsedIntent['intent']): boolean {
+  return ['ADD_CREDIT', 'RECORD_PAYMENT', 'GET_BALANCE', 'GET_CUSTOMER_TRANSACTIONS', 'ADD_CUSTOMER'].includes(intent);
+}
+
+function isFinancialWriteIntent(intent: ParsedIntent['intent']): boolean {
+  return isWriteIntent(intent);
 }
 
 function resolveTtlMs(): number {
@@ -68,6 +80,66 @@ function assertValidContext(context: PreviewTenantContext): void {
   }
 }
 
+function customerResolutionForParsed(parsed: ParsedIntent): CustomerResolution | undefined {
+  if (parsed.intent === 'ADD_CUSTOMER') {
+    return {
+      status: parsed.customerName ? 'unknown' : 'unknown',
+      requestedName: parsed.customerName,
+      candidates: [],
+      requiresCustomerCreationApproval: Boolean(parsed.customerName),
+    };
+  }
+  if (!intentRequiresCustomer(parsed.intent)) return { status: 'not_required', candidates: [] };
+  if (!parsed.customerName) return undefined;
+  return { status: 'unknown', requestedName: parsed.customerName, candidates: [], requiresCustomerCreationApproval: true };
+}
+
+function withCustomerResolution(
+  preview: TransactionPreview,
+  resolution: CustomerResolution | undefined,
+  parsed: ParsedIntent
+): TransactionPreview {
+  const missing = new Set(preview.missingFields);
+  missing.delete('customerResolution');
+  missing.delete('customerId');
+
+  let customerId = preview.customerId;
+  let customerName = preview.customerName;
+
+  if (resolution?.status === 'matched' || resolution?.status === 'created') {
+    customerId = resolution.customerId ?? customerId;
+    customerName = resolution.customerName ?? customerName;
+    missing.delete('customerName');
+  } else if (resolution?.status === 'ambiguous') {
+    missing.add('customerResolution');
+  } else if (resolution?.status === 'unknown') {
+    if (intentRequiresCustomer(parsed.intent) || intentRequiresCustomer(preview.intent)) missing.add('customerResolution');
+  }
+
+  const type = intentToTransactionType[preview.intent];
+  const customerReady =
+    !intentRequiresCustomer(preview.intent) ||
+    resolution?.status === 'matched' ||
+    resolution?.status === 'created' ||
+    resolution?.status === 'not_required';
+
+  const readyForConfirmation =
+    isFinancialWriteIntent(preview.intent) &&
+    preview.confidence > 0 &&
+    missing.size === 0 &&
+    Boolean(type && customerName && preview.amount && customerReady && customerId);
+
+  return {
+    ...preview,
+    customerId,
+    customerName,
+    type,
+    missingFields: [...missing],
+    customerResolution: resolution,
+    readyForConfirmation,
+  };
+}
+
 export function buildPreview(
   parsed: ParsedIntent,
   context: PreviewTenantContext,
@@ -75,14 +147,7 @@ export function buildPreview(
 ): TransactionPreview {
   assertValidContext(context);
   const type = intentToTransactionType[parsed.intent];
-
-  const readyForConfirmation =
-    isWriteIntent(parsed.intent) &&
-    parsed.confidence > 0 &&
-    parsed.missingFields.length === 0 &&
-    Boolean(type && parsed.customerName && parsed.amount);
-
-  return {
+  const base: TransactionPreview = {
     id: randomUUID(),
     businessId: context.businessId,
     createdByUserId: context.createdByUserId,
@@ -93,15 +158,18 @@ export function buildPreview(
     description: parsed.description,
     confidence: parsed.confidence,
     missingFields: parsed.missingFields,
-    readyForConfirmation,
+    readyForConfirmation: false,
     state: 'pending',
     createdAt: new Date(now()).toISOString(),
   };
+  return withCustomerResolution(base, customerResolutionForParsed(parsed), parsed);
 }
 
 export function createPreviewService(store: PreviewStore, options: PreviewServiceOptions = {}) {
   const ttlMs = options.ttlMs ?? resolveTtlMs();
   const now = options.now ?? Date.now;
+  const resolveCustomerForVoiceFn = options.resolveCustomerForVoice ?? resolveCustomerForVoice;
+  const createCustomerForVoiceFn = options.createCustomerForVoice ?? createCustomerForVoice;
 
   function isExpired(preview: TransactionPreview): boolean {
     const created = Date.parse(preview.createdAt);
@@ -109,6 +177,49 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
       return true;
     }
     return now() - created >= ttlMs;
+  }
+
+  async function resolvePreviewCustomer(
+    preview: TransactionPreview,
+    parsed: ParsedIntent,
+    context: PreviewTenantContext
+  ): Promise<TransactionPreview> {
+    if (parsed.intent === 'ADD_CUSTOMER') {
+      return withCustomerResolution(preview, {
+        status: 'unknown',
+        requestedName: parsed.customerName,
+        candidates: [],
+        requiresCustomerCreationApproval: Boolean(parsed.customerName),
+      }, parsed);
+    }
+    if (!intentRequiresCustomer(parsed.intent) || !parsed.customerName) {
+      return withCustomerResolution(preview, intentRequiresCustomer(parsed.intent) ? undefined : { status: 'not_required', candidates: [] }, parsed);
+    }
+
+    const resolved = await resolveCustomerForVoiceFn(context.businessId, parsed.customerName);
+    if (resolved.status === 'matched') {
+      return withCustomerResolution(preview, {
+        status: 'matched',
+        requestedName: parsed.customerName,
+        customerId: resolved.match.id,
+        customerName: resolved.match.name,
+        candidates: resolved.matches,
+      }, parsed);
+    }
+    if (resolved.status === 'ambiguous') {
+      return withCustomerResolution(preview, {
+        status: 'ambiguous',
+        requestedName: parsed.customerName,
+        candidates: resolved.matches,
+        requiresCustomerDisambiguation: true,
+      }, parsed);
+    }
+    return withCustomerResolution(preview, {
+      status: 'unknown',
+      requestedName: parsed.customerName,
+      candidates: [],
+      requiresCustomerCreationApproval: true,
+    }, parsed);
   }
 
   function createPreview(
@@ -128,13 +239,19 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     return preview;
   }
 
-  function createPreviewFromTranscript(
+  async function createPreviewFromTranscript(
     transcript: string,
     context: PreviewTenantContext
   ): Promise<TransactionPreview> {
     assertValidContext(context);
     // Interpretation is pure: it never creates or updates a transaction.
-    return interpretTranscript(transcript).then((parsed) => createPreview(parsed, context));
+    const parsed = await interpretTranscript(transcript);
+    const preview = createPreview(parsed, context);
+    if (preview.confidence <= 0 || parsed.missingFields.includes('intent')) return preview;
+
+    const resolved = await resolvePreviewCustomer(preview, parsed, context);
+    if (resolved !== preview) store.save(resolved);
+    return resolved;
   }
 
   function isOwnedBy(preview: TransactionPreview, context: PreviewTenantContext): boolean {
@@ -150,6 +267,93 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
       return { ok: false, code: 'EXPIRED', message: 'Preview has expired.' };
     }
     return { ok: true, preview };
+  }
+
+  async function resolveCustomerForPreview(
+    id: string,
+    context: PreviewTenantContext,
+    customerId: string
+  ): Promise<PreviewResult> {
+    const preview = store.get(id);
+    if (!preview || !isOwnedBy(preview, context)) {
+      return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
+    }
+    if (isExpired(preview)) {
+      return { ok: false, code: 'EXPIRED', message: 'Preview has expired.' };
+    }
+    if (preview.state !== 'pending') {
+      return { ok: false, code: 'NOT_CANCELLABLE', message: 'Preview cannot be updated.' };
+    }
+    const resolution = preview.customerResolution;
+    if (resolution?.status !== 'ambiguous') {
+      return { ok: false, code: 'NOT_READY', message: 'Preview does not require customer selection.' };
+    }
+    const selected = resolution.candidates.find((c) => c.id === customerId);
+    if (!selected) {
+      return { ok: false, code: 'MISSING_FIELDS', message: 'Selected customer is not a valid match for this preview.' };
+    }
+    const updated = withCustomerResolution(preview, {
+      status: 'matched',
+      requestedName: resolution.requestedName,
+      customerId: selected.id,
+      customerName: selected.name,
+      candidates: resolution.candidates,
+    }, {
+      intent: preview.intent,
+      confidence: preview.confidence,
+      missingFields: preview.missingFields,
+      customerName: selected.name,
+      amount: preview.amount,
+      description: preview.description,
+    });
+    store.save(updated);
+    return { ok: true, preview: updated };
+  }
+
+  async function createCustomerForPreview(
+    id: string,
+    context: PreviewTenantContext,
+    customerName?: string
+  ): Promise<PreviewResult> {
+    const preview = store.get(id);
+    if (!preview || !isOwnedBy(preview, context)) {
+      return { ok: false, code: 'INVALID_PREVIEW', message: 'Invalid or unknown preview.' };
+    }
+    if (isExpired(preview)) {
+      return { ok: false, code: 'EXPIRED', message: 'Preview has expired.' };
+    }
+    if (preview.state !== 'pending') {
+      return { ok: false, code: 'NOT_CANCELLABLE', message: 'Preview cannot be updated.' };
+    }
+    const resolution = preview.customerResolution;
+    if (resolution?.status !== 'unknown') {
+      return { ok: false, code: 'NOT_READY', message: 'Preview does not require customer creation.' };
+    }
+    const requestedName = (customerName ?? resolution.requestedName ?? preview.customerName ?? '').trim();
+    if (!requestedName) {
+      return { ok: false, code: 'MISSING_FIELDS', message: 'Customer name is required.' };
+    }
+    // Create/reuse customer only; no financial transaction is committed here.
+    const created = await createCustomerForVoiceFn(context.businessId, context.createdByUserId, requestedName);
+    if (!created.ok) {
+      return { ok: false, code: 'INVALID_INTENT', message: created.message };
+    }
+    const updated = withCustomerResolution(preview, {
+      status: 'created',
+      requestedName,
+      customerId: created.customer.id,
+      customerName: created.customer.name,
+      candidates: [{ id: created.customer.id, name: created.customer.name, phone: created.customer.phone ?? null }],
+    }, {
+      intent: preview.intent,
+      confidence: preview.confidence,
+      missingFields: preview.missingFields,
+      customerName: created.customer.name,
+      amount: preview.amount,
+      description: preview.description,
+    });
+    store.save(updated);
+    return { ok: true, preview: updated };
   }
 
   function getPreview(id: string, context: PreviewTenantContext): TransactionPreview | undefined {
@@ -234,6 +438,9 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
       };
     }
 
+    if (preview.intent === 'ADD_CUSTOMER') {
+      return { ok: false, code: 'READ_ONLY_INTENT', message: 'Customer creation requires explicit approval before any transaction can be confirmed.' };
+    }
     if (isReadIntent(preview.intent)) {
       return { ok: false, code: 'READ_ONLY_INTENT', message: 'Read-only intents cannot be committed.' };
     }
@@ -244,8 +451,18 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
       return { ok: false, code: 'LOW_CONFIDENCE', message: 'Preview confidence is too low to confirm.' };
     }
 
+    const resolution = preview.customerResolution;
+    if (intentRequiresCustomer(preview.intent) && resolution?.status !== 'matched' && resolution?.status !== 'created') {
+      return {
+        ok: false,
+        code: 'MISSING_FIELDS',
+        message: 'Customer must be resolved before confirming this transaction.',
+      };
+    }
+
     const revalidationMissing: string[] = [];
     if (!preview.customerName) revalidationMissing.push('customerName');
+    if (intentRequiresCustomer(preview.intent) && !preview.customerId) revalidationMissing.push('customerId');
     if (preview.amount === undefined || preview.amount === null || preview.amount <= 0) {
       revalidationMissing.push('amount');
     }
@@ -279,6 +496,7 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
       const result = await committer({
         businessId: claimed.businessId,
         createdByUserId: claimed.createdByUserId,
+        customerId: claimed.customerId,
         customerName: claimed.customerName as string,
         amount: claimed.amount as number,
         type: claimed.type as TransactionType,
@@ -308,5 +526,7 @@ export function createPreviewService(store: PreviewStore, options: PreviewServic
     cancelPreview,
     cancelPreviewResult,
     confirmPreview,
+    resolveCustomerForPreview,
+    createCustomerForPreview,
   };
 }
