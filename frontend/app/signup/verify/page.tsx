@@ -17,7 +17,7 @@ function verificationMessage(error: unknown) {
   if (error.status === 429) return 'Too many verification attempts. Please wait before trying again.';
   if (error.status === 503) return 'Phone verification is temporarily unavailable. You can request another code when service returns.';
   if ((error.status !== undefined && error.status >= 500)
-    || error.kind === 'network' || error.kind === 'aborted' || error.kind === 'invalid-response') {
+    || error.kind === 'network' || error.kind === 'timeout' || error.kind === 'aborted' || error.kind === 'invalid-response') {
     return 'We could not confirm whether verification completed. Your account may already be verified. Try signing in; if sign-in does not work, return here and request a new code.';
   }
   return error.message;
@@ -31,9 +31,17 @@ export default function SignupVerificationPage() {
   const [resending, setResending] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [isError, setIsError] = useState(false);
+  const [invalidField, setInvalidField] = useState('');
   const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
   const submitLock = useRef(false);
   const resendLock = useRef(false);
+
+  const showFieldError = (id: string, message: string) => {
+    setInvalidField(id);
+    setIsError(true);
+    setFeedback(message);
+    window.requestAnimationFrame(() => document.getElementById(id)?.focus());
+  };
 
   const beginResendCooldown = () => {
     const cooldownUntil = Date.now() + RESEND_COOLDOWN_MS;
@@ -71,12 +79,13 @@ export default function SignupVerificationPage() {
     const normalizedPhone = phone.trim();
     const normalizedCode = code.trim();
     if (!normalizedPhone || !/^\d{6}$/.test(normalizedCode)) {
-      setIsError(true);
-      setFeedback('Enter the phone number used for signup and the 6-digit code.');
+      if (!normalizedPhone) showFieldError('verify-phone', 'Enter the phone number used for signup.');
+      else showFieldError('verify-code', 'Enter the 6-digit verification code.');
       return;
     }
     submitLock.current = true;
     setSubmitting(true);
+    setInvalidField('');
     setFeedback('');
     setIsError(false);
     try {
@@ -97,15 +106,15 @@ export default function SignupVerificationPage() {
   };
 
   const resend = async () => {
-    if (resendLock.current || resendCooldownSeconds > 0) return;
+    if (resendLock.current || submitLock.current || resendCooldownSeconds > 0) return;
     const normalizedPhone = phone.trim();
     if (!normalizedPhone) {
-      setIsError(true);
-      setFeedback('Enter the phone number used for signup first.');
+      showFieldError('verify-phone', 'Enter the phone number used for signup first.');
       return;
     }
     resendLock.current = true;
     setResending(true);
+    setInvalidField('');
     setFeedback('');
     setIsError(false);
     try {
@@ -118,7 +127,7 @@ export default function SignupVerificationPage() {
     } catch (error) {
       setIsError(true);
       const uncertainDelivery = error instanceof ApiError
-        && (error.kind === 'network' || error.kind === 'aborted' || error.kind === 'invalid-response'
+        && (error.kind === 'network' || error.kind === 'timeout' || error.kind === 'aborted' || error.kind === 'invalid-response'
           || (error.status !== undefined && error.status >= 500 && error.status !== 503));
       if (uncertainDelivery) beginResendCooldown();
       setFeedback(error instanceof ApiError && error.status === 429
@@ -146,22 +155,23 @@ export default function SignupVerificationPage() {
           <h1 id="verify-heading" className="text-2xl font-semibold tracking-tight">Verify your phone</h1>
           <p className="mt-2 text-sm leading-6 text-muted">Enter the six-digit code sent to your phone. After verification, sign in with your phone number and password.</p>
 
-          <form className="mt-6 space-y-5" onSubmit={verify} noValidate>
+          <form className="mt-6 space-y-5" aria-labelledby="verify-heading" onSubmit={verify} noValidate>
             <div>
               <label htmlFor="verify-phone" className="mb-1.5 block text-sm font-medium">Phone number</label>
-              <input id="verify-phone" name="tel" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event => setPhone(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+              <input id="verify-phone" name="tel" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event => setPhone(event.target.value)} aria-invalid={invalidField === 'verify-phone' || undefined} aria-describedby={invalidField === 'verify-phone' ? 'verification-error' : undefined} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
             </div>
             <div>
               <label htmlFor="verify-code" className="mb-1.5 block text-sm font-medium">6-digit verification code</label>
-              <input id="verify-code" name="one-time-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base tracking-[0.2em] text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" aria-describedby={feedback ? 'verification-feedback' : undefined} />
+              <input id="verify-code" name="one-time-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} aria-invalid={invalidField === 'verify-code' || undefined} aria-describedby={invalidField === 'verify-code' ? 'verification-error' : undefined} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base tracking-[0.2em] text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
             </div>
 
-            {feedback && <p id="verification-feedback" role={isError ? 'alert' : 'status'} className="rounded-md border border-forest/15 bg-beige p-3 text-sm leading-5 text-forest">{feedback}</p>}
+            {isError && feedback && <p id="verification-error" role={invalidField ? undefined : 'alert'} className="rounded-md border border-forest/15 bg-beige p-3 text-sm leading-5 text-forest">{feedback}</p>}
+            <p role="status" className={!isError && feedback ? 'rounded-md border border-forest/15 bg-beige p-3 text-sm leading-5 text-forest' : 'sr-only'}>{!isError && feedback}</p>
 
             <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>{submitting ? 'Verifying…' : 'Verify phone'}</Button>
           </form>
 
-          <Button type="button" variant="outline" className="mt-3 w-full" disabled={resending || submitting || resendCooldownSeconds > 0} aria-busy={resending} onClick={() => { void resend(); }}>
+          <Button type="button" variant="outline" className="mt-3 w-full aria-disabled:pointer-events-none aria-disabled:opacity-50" aria-disabled={resending || submitting || resendCooldownSeconds > 0} aria-label={resendCooldownSeconds > 0 ? 'Resend code unavailable' : undefined} aria-busy={resending} onClick={() => { void resend(); }}>
             {resending ? 'Requesting code…' : resendCooldownSeconds > 0 ? `Resend code in ${resendCooldownSeconds}s` : 'Resend code'}
           </Button>
           <p className="mt-5 text-center text-sm text-muted">Already verified? <Link href="/login" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Sign in</Link></p>

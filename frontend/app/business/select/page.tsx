@@ -29,7 +29,7 @@ function businessSetupError(error: unknown) {
   if (error.status === 403) return 'Your phone must be verified before you can create a shop. Sign out and finish phone verification first.';
   if (error.status === 409) return 'Shop setup conflicts with an existing request or business. Refresh your business list before trying again.';
   if (error.status === 429) return 'Too many shop setup attempts. Please wait before trying again.';
-  if (error.kind === 'network' || error.kind === 'aborted' || error.kind === 'session-changed' || error.kind === 'invalid-response' || (error.status !== undefined && error.status >= 500)) {
+  if (error.kind === 'network' || error.kind === 'timeout' || error.kind === 'aborted' || error.kind === 'session-changed' || error.kind === 'invalid-response' || (error.status !== undefined && error.status >= 500)) {
     return 'We could not confirm whether your shop was created. Do not start a new setup. Retry the same shop name safely or refresh your business list.';
   }
   return error.message;
@@ -59,10 +59,12 @@ export default function BusinessSelectionPage() {
   const [businessName, setBusinessName] = useState('');
   const [businessFeedback, setBusinessFeedback] = useState('');
   const [businessFeedbackIsError, setBusinessFeedbackIsError] = useState(false);
+  const [invalidBusinessName, setInvalidBusinessName] = useState(false);
   const [creatingBusiness, setCreatingBusiness] = useState(false);
   const [pendingOperation, setPendingOperation] = useState<PendingBusinessOperation | null>(null);
   const [createdBusinessName, setCreatedBusinessName] = useState('');
   const creationLock = useRef(false);
+  const refreshListPending = useRef(false);
   const sessionSubject = currentSessionSubject(getToken());
   const operationStorageKey = sessionSubject ? `${FIRST_BUSINESS_OPERATION_PREFIX}${encodeURIComponent(sessionSubject)}` : null;
 
@@ -112,10 +114,13 @@ export default function BusinessSelectionPage() {
     if (creationLock.current) return;
     const normalizedName = businessName.trim();
     if (normalizedName.length < 2 || normalizedName.length > 120) {
+      setInvalidBusinessName(true);
+      window.requestAnimationFrame(() => document.getElementById('first-business-name')?.focus());
       setBusinessFeedback('Shop name must be between 2 and 120 characters.');
       setBusinessFeedbackIsError(true);
       return;
     }
+    setInvalidBusinessName(false);
     if (pendingOperation && pendingOperation.name !== normalizedName) {
       setBusinessFeedback('A previous shop setup may have completed. Retry that same shop name or refresh your business list before starting another setup.');
       setBusinessFeedbackIsError(true);
@@ -160,10 +165,13 @@ export default function BusinessSelectionPage() {
   };
 
   const refreshBusinessList = () => {
-    void refreshMemberships(true).then(() => {
+    if (refreshListPending.current) return;
+    refreshListPending.current = true;
+    void refreshMemberships(true).then(refreshed => {
+      if (!refreshed) return;
       setBusinessFeedback('Business list refreshed. If your shop setup completed, select it below.');
       setBusinessFeedbackIsError(false);
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => { refreshListPending.current = false; });
   };
 
   return (
@@ -193,21 +201,21 @@ export default function BusinessSelectionPage() {
             <div className="mt-6 rounded-lg border border-forest/10 bg-beige p-4" role="group" aria-label="Membership loading error">
               {createdBusinessName && <p role="status" className="mb-3 text-sm text-forest">“{createdBusinessName}” was created. Refresh the list to select it.</p>}
               <p role="alert" className="text-sm text-forest">{membershipsError || 'Could not load your businesses.'}</p>
-              <Button type="button" className="mt-4" onClick={() => { void refreshMemberships(true).catch(() => undefined); }}>Retry</Button>
+              <Button type="button" className="mt-4" onClick={() => { void refreshMemberships().catch(() => undefined); }}>Retry</Button>
             </div>
           ) : memberships.length === 0 ? (
             <div className="mt-6 rounded-lg border border-forest/10 bg-beige p-4 sm:p-5">
-              <h2 className="text-lg font-semibold">Set up your first shop</h2>
+              <h2 id="first-shop-heading" className="text-lg font-semibold">Set up your first shop</h2>
               <p className="mt-2 text-sm leading-6 text-muted">Create a shop to keep its customers and daily ledger together. You’ll choose the shop before opening dashboard data.</p>
-              {businessFeedback && <p className="mt-4 rounded-md border border-forest/15 bg-beige-light p-3 text-sm leading-5 text-forest" role={businessFeedbackIsError ? 'alert' : 'status'}>{businessFeedback}</p>}
+              {businessFeedback && <p id="business-setup-feedback" className="mt-4 rounded-md border border-forest/15 bg-beige-light p-3 text-sm leading-5 text-forest" role={invalidBusinessName ? undefined : businessFeedbackIsError ? 'alert' : 'status'}>{businessFeedback}</p>}
               {createdBusinessName ? (
                 <Button type="button" variant="outline" className="mt-4 w-full sm:w-auto" onClick={refreshBusinessList}>Refresh business list</Button>
               ) : (
                 <>
-                  <form className="mt-4 space-y-4" onSubmit={createBusiness} noValidate>
+                  <form className="mt-4 space-y-4" aria-labelledby="first-shop-heading" onSubmit={createBusiness} noValidate>
                     <div>
                       <label htmlFor="first-business-name" className="mb-1.5 block text-sm font-medium">Shop name</label>
-                      <input id="first-business-name" name="businessName" autoComplete="organization" required maxLength={120} value={businessName} onChange={event => setBusinessName(event.target.value)} disabled={Boolean(pendingOperation) || creatingBusiness} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-70" aria-describedby="business-name-help" />
+                      <input id="first-business-name" name="businessName" autoComplete="organization" required maxLength={120} value={businessName} onChange={event => setBusinessName(event.target.value)} disabled={Boolean(pendingOperation) || creatingBusiness} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-70" aria-invalid={invalidBusinessName || undefined} aria-describedby={invalidBusinessName ? 'business-name-help business-setup-feedback' : 'business-name-help'} />
                       <p id="business-name-help" className="mt-1 text-xs leading-5 text-muted">Use 2 to 120 characters.</p>
                     </div>
                     <Button type="submit" className="w-full sm:w-auto" disabled={creatingBusiness} aria-busy={creatingBusiness}>
@@ -217,9 +225,6 @@ export default function BusinessSelectionPage() {
                   {businessFeedbackIsError && <Button type="button" variant="outline" className="mt-3 w-full sm:w-auto" onClick={refreshBusinessList}>Refresh business list</Button>}
                 </>
               )}
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button type="button" variant="outline" onClick={signOut}>Log out</Button>
-              </div>
             </div>
           ) : (
             <ul className="mt-6 space-y-3" aria-label="Active business memberships">

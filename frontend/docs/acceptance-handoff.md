@@ -70,7 +70,7 @@ Therefore, new-user login after OTP, zero-membership onboarding against the new 
 
 - Valid OTP verification endpoint returns HTTP 500 (blocker for new-user onboarding).
 - Transaction status field (`ACTIVE`/`VOIDED`) must be present in API responses; backend filters `ACTIVE` for lists/ledgers but returns `VOIDED` on detail lookup.
-- Ledger rounding: backend rounds amounts to whole rupees despite database storing two decimals; manual entry review notes this mismatch.
+- Currency display uses the raw transaction amount, with storage at two decimal places. The backend's legacy `formattedAmount` can omit paise, so the frontend formats the raw value. Aggregate balances and voice preview amounts depend on the precision of the values sent by the API.
 - Preview API does not provide expiry timestamp; frontend cannot display preview TTL.
 - Idempotency key generation and storage for first-business setup relies on session storage.
 

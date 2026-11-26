@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
 import { useAuth } from '@/components/auth/auth-provider';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { formatInrAmount, readInrAmount } from '@/lib/inr';
 import { isSupportedPreviewWrite, normalizeTransactionPreview, type TransactionPreview } from '@/lib/preview-contract';
 import { VoiceWaveform } from '@/components/ui/voice-waveform';
 import { TransactionDetailStatus, TransactionRowStatus } from '@/components/dashboard/transaction-status';
@@ -68,23 +69,8 @@ type SpeechRecognitionWindow = Window & {
   webkitSpeechRecognition?: new () => SpeechRecognitionLike;
 };
 
-const formatCurrency = (value: Money) => {
-  const negative = value.startsWith('-');
-  const [whole, fraction] = (negative ? value.slice(1) : value).split('.');
-  let grouped = whole;
-  if (whole.length > 3) {
-    const lastThree = whole.slice(-3);
-    let prefix = whole.slice(0, -3);
-    const groups: string[] = [];
-    while (prefix.length > 2) {
-      groups.unshift(prefix.slice(-2));
-      prefix = prefix.slice(0, -2);
-    }
-    if (prefix) groups.unshift(prefix);
-    grouped = `${groups.join(',')},${lastThree}`;
-  }
-  return `${negative ? '-' : ''}₹${grouped}${fraction ? `.${fraction}` : ''}`;
-};
+// Give the browser time to request permission and open the audio input.
+const SPEECH_STARTUP_TIMEOUT_MS = 10_000;
 
 const formatDate = (value: string) =>
   new Date(value).toLocaleString('en-IN', {
@@ -105,9 +91,17 @@ const readOnlyPreviewIntents = new Set([
 ]);
 
 type PanelState<T> =
-  | { status: 'loading' | 'error'; data?: T }
+  | { status: 'loading'; data?: T }
+  | { status: 'error'; data?: T; message?: string }
   | { status: 'not-found'; data?: never }
   | { status: 'success'; data: T };
+
+function panelErrorMessage(error: unknown) {
+  if (!(error instanceof ApiError)) return undefined;
+  if (error.kind === 'timeout' || error.kind === 'network') return error.message;
+  if (error.status === 429) return 'Too many requests. Please wait before retrying.';
+  if (error.status && error.status >= 500) return 'HisabNaki is temporarily unavailable. Please try again later.';
+}
 
 function useDashboardPanel<T>(path: string, normalize: (data: unknown) => T | null, handleNotFound = false, enabled = true) {
   const [state, setState] = useState<PanelState<T>>({ status: 'loading' });
@@ -115,8 +109,8 @@ function useDashboardPanel<T>(path: string, normalize: (data: unknown) => T | nu
   const request = useRef<AbortController | null>(null);
   const active = useRef(false);
 
-  const load = useCallback(async (): Promise<boolean> => {
-    if (!active.current) return false;
+  const load = useCallback(async (force = false): Promise<boolean> => {
+    if (!active.current || (request.current && !force)) return false;
 
     request.current?.abort();
     const controller = new AbortController();
@@ -142,8 +136,12 @@ function useDashboardPanel<T>(path: string, normalize: (data: unknown) => T | nu
         if (request.current === controller) setState({ status: 'not-found' });
         return false;
       }
-      if (request.current === controller) setState(previous => ({ status: 'error', data: previous.data }));
+      if (request.current === controller) {
+        setState(previous => ({ status: 'error', data: previous.data, message: panelErrorMessage(error) }));
+      }
       return false;
+    } finally {
+      if (request.current === controller) request.current = null;
     }
   }, [handleNotFound, normalize, path]);
 
@@ -164,24 +162,18 @@ function useDashboardPanel<T>(path: string, normalize: (data: unknown) => T | nu
   return { state, load, dataPath };
 }
 
-function normalizeMoney(value: unknown, allowNegative = false, requirePositive = false): Money | null {
-  const text = typeof value === 'number' && Number.isFinite(value) ? String(value) : value;
-  if (typeof text !== 'string' || !/^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(text)) return null;
-  const negative = text.startsWith('-');
-  if (negative && !allowNegative) return null;
-  const unsigned = negative ? text.slice(1) : text;
-  const isZero = /^0+(?:\.0+)?$/.test(unsigned);
-  if (requirePositive && isZero) return null;
-  return isZero ? '0' : text;
+function normalizeNonnegativeAmount(value: unknown): Money | null {
+  const text = readInrAmount(value);
+  return text?.startsWith('-') ? null : text;
 }
 
 function normalizeSummary(value: unknown): Summary | null {
   if (!isRecord(value) || typeof value.businessName !== 'string' || !value.businessName.trim()) return null;
-  const todaysSales = normalizeMoney(value.todaysSales);
-  const todaysExpenses = normalizeMoney(value.todaysExpenses);
-  const paymentsReceived = normalizeMoney(value.paymentsReceived);
-  const newCredit = normalizeMoney(value.newCredit);
-  const totalOutstanding = normalizeMoney(value.totalOutstanding, true);
+  const todaysSales = normalizeNonnegativeAmount(value.todaysSales);
+  const todaysExpenses = normalizeNonnegativeAmount(value.todaysExpenses);
+  const paymentsReceived = normalizeNonnegativeAmount(value.paymentsReceived);
+  const newCredit = normalizeNonnegativeAmount(value.newCredit);
+  const totalOutstanding = readInrAmount(value.totalOutstanding);
   const recentTransactions = normalizeTransactionList(value.recentTransactions);
   if ([todaysSales, todaysExpenses, paymentsReceived, newCredit, totalOutstanding, recentTransactions].some(item => item === null)) return null;
   return {
@@ -203,7 +195,7 @@ function normalizeCustomers(value: unknown): Customer[] | null {
       || typeof item.name !== 'string' || !item.name.trim()
       || (item.phone !== undefined && item.phone !== null && typeof item.phone !== 'string')
       || typeof item.transactionCount !== 'number' || !Number.isInteger(item.transactionCount) || item.transactionCount < 0) return null;
-    const outstandingBalance = normalizeMoney(item.outstandingBalance, true);
+    const outstandingBalance = readInrAmount(item.outstandingBalance);
     if (outstandingBalance === null) return null;
     customers.push({
       id: item.id,
@@ -228,7 +220,7 @@ function normalizeCustomerLedger(value: unknown): CustomerLedger | null {
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim()
     || typeof value.name !== 'string' || !value.name.trim()
     || (value.phone !== undefined && value.phone !== null && typeof value.phone !== 'string')) return null;
-  const outstandingBalance = normalizeMoney(value.outstandingBalance, true);
+  const outstandingBalance = readInrAmount(value.outstandingBalance);
   const transactions = normalizeTransactionList(value.transactions);
   if (outstandingBalance === null || transactions === null) return null;
   return {
@@ -261,8 +253,8 @@ function TransactionRows({ transactions, customerLedger = false, onViewDetails }
             </p>
           </div>
           <div className="max-w-full shrink-0 text-left sm:max-w-[50%] sm:text-right">
-            <p className={`whitespace-nowrap text-xs font-bold sm:text-sm ${transaction.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>
-              {formatCurrency(transaction.amount)}
+            <p className={`text-xs font-bold [overflow-wrap:anywhere] sm:text-sm ${transaction.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>
+              {formatInrAmount(transaction.amount)}
             </p>
             <p className={`mt-0.5 inline-block max-w-full rounded-full px-2 text-xs font-medium ${
               transaction.status === 'VOIDED' ? 'bg-beige-light text-muted' : transaction.type === 'PAYMENT' ? 'bg-purple/10 text-forest' : transaction.type === 'CREDIT' ? 'bg-beige text-forest' : 'text-muted'
@@ -293,13 +285,13 @@ function TransactionDetails({ id, onClose }: { id: string; onClose: () => void }
         <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
           <dt className="font-medium text-muted">Type</dt><dd className="font-semibold text-forest">{detail.type === 'PAYMENT' ? 'Repayment' : detail.type === 'CREDIT' ? 'Credit' : detail.type}</dd>
           <dt className="font-medium text-muted">Status</dt><dd><TransactionDetailStatus status={detail.status} /></dd>
-          <dt className="font-medium text-muted">Amount</dt><dd className={`whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold ${detail.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>{formatCurrency(detail.amount)}</dd>
+          <dt className="font-medium text-muted">Amount</dt><dd className={`text-[clamp(0.75rem,4vw,1.125rem)] font-semibold [overflow-wrap:anywhere] ${detail.status === 'VOIDED' ? 'text-muted line-through decoration-muted' : 'text-forest'}`}>{formatInrAmount(detail.amount)}</dd>
           <dt className="font-medium text-muted">Customer</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.customer?.name || 'No customer linked'}</dd>
           <dt className="font-medium text-muted">Date</dt><dd className="text-forest">{formatDate(detail.createdAt)}</dd>
           <dt className="font-medium text-muted">Description</dt><dd className="text-forest [overflow-wrap:anywhere]">{detail.description || 'No description provided'}</dd>
           <dt className="font-medium text-muted">Transaction ID</dt><dd className="break-all font-mono text-xs text-forest">{detail.id}</dd>
         </dl>
-      ) : <PanelError panel="transaction details" retry={load} focusTarget={`${sectionId}-title`} />}
+      ) : <PanelError panel="transaction details" retry={load} focusTarget={`${sectionId}-title`} message={state.status === 'error' ? state.message : undefined} />}
     </LedgerSection>
   );
 }
@@ -358,7 +350,7 @@ function LedgerSection({ id, title, onClose, children }: { id: string; title: st
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3">
         <h4 id={`${id}-title`} ref={heading} tabIndex={-1} className="scroll-mt-2 text-base font-semibold text-forest [overflow-wrap:anywhere]">{title}</h4>
-        <Button type="button" variant="link" size="sm" onClick={onClose}>Close</Button>
+        <Button type="button" variant="link" size="sm" aria-label={`Close ${title.toLowerCase()}`} onClick={onClose}>Close</Button>
       </div>
       {children}
     </section>
@@ -383,7 +375,7 @@ function CustomerLedgerDetails({ customerId, onClose }: { customerId: string; on
             {ledger.phone && <p className="text-sm text-muted">{ledger.phone}</p>}
             <p className="text-xs text-muted">Customer ID {ledger.id}</p>
             <p className="text-sm text-muted">Outstanding balance</p>
-            <strong className="block whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] text-forest">{formatCurrency(ledger.outstandingBalance)}</strong>
+            <strong className="block text-[clamp(0.75rem,4vw,1.125rem)] text-forest [overflow-wrap:anywhere]">{formatInrAmount(ledger.outstandingBalance)}</strong>
           </div>
           {ledger.transactions.length > 0 ? (
             <>
@@ -392,15 +384,21 @@ function CustomerLedgerDetails({ customerId, onClose }: { customerId: string; on
             </>
           ) : <p role="status" className="text-sm text-muted">No transactions for this customer.</p>}
         </>
-      ) : <PanelError panel="customer ledger" retry={load} focusTarget={`${sectionId}-title`} />}
+      ) : <PanelError panel="customer ledger" retry={load} focusTarget={`${sectionId}-title`} message={state.status === 'error' ? state.message : undefined} />}
     </LedgerSection>
   );
 }
 
-function PanelError({ panel, retry, focusTarget, retained }: { panel: string; retry: () => void; focusTarget?: string; retained?: boolean }) {
+function PanelError({ panel, retry, focusTarget, retained, message }: {
+  panel: string;
+  retry: () => void;
+  focusTarget?: string;
+  retained?: boolean;
+  message?: string;
+}) {
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-sm text-muted">
-      <p role="status">Couldn’t load {panel}.{retained && ' Showing last loaded information.'}</p>
+      <p role="status">Couldn’t load {panel}.{message && ` ${message}`}{retained && ' Showing last loaded information.'}</p>
       <Button type="button" variant="link" size="sm" aria-label={`Retry ${panel}`} onClick={() => {
         if (focusTarget) focusInView(document.getElementById(focusTarget));
         retry();
@@ -434,6 +432,7 @@ export default function DashboardPage() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const recognitionSequenceRef = useRef(0);
   const recognitionStopRequestedRef = useRef(false);
+  const recognitionStartupTimerRef = useRef<number | null>(null);
   const voiceMountedRef = useRef(false);
   const previewRequestRef = useRef<AbortController | null>(null);
   const previewRequestSequence = useRef(0);
@@ -559,25 +558,47 @@ export default function DashboardPage() {
     }
   }, [businessContextGeneration, selectedBusinessId]);
 
+  const clearRecognitionStartup = useCallback(() => {
+    const timer = recognitionStartupTimerRef.current;
+    recognitionStartupTimerRef.current = null;
+    if (timer !== null) window.clearTimeout(timer);
+  }, []);
+
+  const releaseRecognition = useCallback((abort = false) => {
+    clearRecognitionStartup();
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognitionSequenceRef.current += 1;
+    recognitionStopRequestedRef.current = false;
+    if (!recognition) return;
+
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    if (abort) {
+      try { recognition.abort(); } catch { /* The browser may already have retired the instance. */ }
+    }
+  }, [clearRecognitionStartup]);
+
   const startVoiceCapture = () => {
     const activeRecognition = recognitionRef.current;
     if (activeRecognition) {
       if (voicePhase === 'listening' && !recognitionStopRequestedRef.current) {
+        clearRecognitionStartup();
         recognitionStopRequestedRef.current = true;
         setVoiceFeedback('Stopping listening…');
         try {
           activeRecognition.stop();
         } catch {
-          recognitionRef.current = null;
-          recognitionSequenceRef.current += 1;
-          recognitionStopRequestedRef.current = false;
+          releaseRecognition(true);
           setVoicePhase('error');
           setVoiceFeedback('Speech capture could not stop cleanly. Try again.');
         }
       }
       return;
     }
-    if (previewBusy || voicePreview) return;
+    if (previewRequestRef.current || previewBusy || voicePreview) return;
     const speechWindow = window as SpeechRecognitionWindow;
     const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!Constructor) {
@@ -587,7 +608,7 @@ export default function DashboardPage() {
     }
     setVoiceTranscript('');
     setVoicePhase('starting');
-    setVoiceFeedback('Starting microphone…');
+    setVoiceFeedback('Starting microphone… Press Escape to cancel.');
     try {
       const recognition = new Constructor();
       const sequence = ++recognitionSequenceRef.current;
@@ -602,15 +623,15 @@ export default function DashboardPage() {
       recognition.interimResults = false;
       recognition.continuous = false;
       recognition.onstart = () => {
-        if (!isCurrentCapture()) return;
+        if (!isCurrentCapture() || recognitionStartupTimerRef.current === null) return;
+        clearRecognitionStartup();
         setVoicePhase('listening');
         setVoiceFeedback('Listening. Speak one transaction or question.');
       };
       recognition.onresult = event => {
         if (!isCurrentCapture()) return;
         const transcript = Array.from(event.results).filter(result => result.isFinal).map(result => result[0]?.transcript ?? '').join(' ').trim();
-        recognitionRef.current = null;
-        recognitionSequenceRef.current += 1;
+        releaseRecognition();
         if (!transcript) {
           setVoicePhase('error');
           setVoiceFeedback('No clear speech was captured. Try speaking again.');
@@ -621,9 +642,7 @@ export default function DashboardPage() {
       };
       recognition.onerror = event => {
         if (!isCurrentCapture()) return;
-        recognitionRef.current = null;
-        recognitionSequenceRef.current += 1;
-        recognitionStopRequestedRef.current = false;
+        releaseRecognition();
         if (event.error === 'aborted') {
           setVoicePhase('idle');
           setVoiceFeedback('Speech capture stopped. You can try again when ready.');
@@ -645,17 +664,19 @@ export default function DashboardPage() {
       };
       recognition.onend = () => {
         if (!isCurrentCapture()) return;
-        recognitionRef.current = null;
-        recognitionSequenceRef.current += 1;
-        recognitionStopRequestedRef.current = false;
+        releaseRecognition();
         setVoicePhase('idle');
         setVoiceFeedback('Listening stopped without a transcript. Try again when you are ready.');
       };
+      recognitionStartupTimerRef.current = window.setTimeout(() => {
+        if (!isCurrentCapture() || recognitionStartupTimerRef.current === null) return;
+        releaseRecognition(true);
+        setVoicePhase('error');
+        setVoiceFeedback('The microphone didn’t start in time. Check microphone permissions and try again.');
+      }, SPEECH_STARTUP_TIMEOUT_MS);
       recognition.start();
     } catch {
-      recognitionRef.current = null;
-      recognitionSequenceRef.current += 1;
-      recognitionStopRequestedRef.current = false;
+      releaseRecognition(true);
       setVoicePhase('error');
       setVoiceFeedback('The microphone could not start. Check browser permission and try again.');
     }
@@ -669,11 +690,7 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    recognitionSequenceRef.current += 1;
-    const activeRecognition = recognitionRef.current;
-    recognitionRef.current = null;
-    recognitionStopRequestedRef.current = false;
-    activeRecognition?.abort();
+    releaseRecognition(true);
     setVoicePreview(null);
     setVoiceTranscript('');
     setPreviewBusy(false);
@@ -681,21 +698,19 @@ export default function DashboardPage() {
     setVoiceFeedback('Tap the microphone and speak naturally in Hindi or Hinglish.');
     previewRequestSequence.current += 1;
     previewRequestRef.current?.abort();
-  }, [selectedBusinessId, businessContextGeneration]);
+    previewRequestRef.current = null;
+  }, [selectedBusinessId, businessContextGeneration, releaseRecognition]);
 
   useEffect(() => {
     voiceMountedRef.current = true;
     return () => {
       voiceMountedRef.current = false;
-      recognitionSequenceRef.current += 1;
+      releaseRecognition(true);
       previewRequestSequence.current += 1;
       previewRequestRef.current?.abort();
-      const activeRecognition = recognitionRef.current;
-      recognitionRef.current = null;
-      recognitionStopRequestedRef.current = false;
-      activeRecognition?.abort();
+      previewRequestRef.current = null;
     };
-  }, []);
+  }, [releaseRecognition]);
 
   const updateSearch = (value: string) => {
     setCustomerSearch(value);
@@ -786,6 +801,7 @@ export default function DashboardPage() {
     setCustomerNotice('The previous request was not repeated. Check the current customer details before making the same change again.');
     setDeleteTarget(null);
     setCustomerEditor(null);
+    restoreCustomerActionFocus();
   };
 
   const runCustomerMutation = async (
@@ -820,7 +836,7 @@ export default function DashboardPage() {
       setCustomerNoticeError(false);
       window.clearTimeout(timeout);
       setFinancialOperationStatus('idle');
-      void loadCustomers();
+      void loadCustomers(true);
       setMutationPending(false);
       mutationLock.current = false;
       return 'success';
@@ -909,7 +925,7 @@ export default function DashboardPage() {
       setDeleteTarget(null);
       setCustomerNotice(`${target.name} was deleted.`);
       setSelectedCustomerId(current => current === target.id ? null : current);
-      restoreCustomerActionFocus();
+      window.requestAnimationFrame(() => focusInView(addCustomerTrigger.current));
     } else if (outcome === 'definite-error') {
       setDeleteTarget(null);
       restoreCustomerActionFocus();
@@ -983,14 +999,14 @@ export default function DashboardPage() {
   const transactionContent = (
     <>
       {showHistory && invalidHistoryDates && <p role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">The start date must be on or before the end date.</p>}
-      {!invalidActiveHistoryDates && (transactionState.status === 'loading' || (showHistory && !historyDataCurrent)) && (
+      {!invalidActiveHistoryDates && (transactionState.status === 'loading' || (transactionState.status === 'success' && showHistory && !historyDataCurrent)) && (
         <p role="status" className={transactions.length ? 'text-sm text-muted' : 'flex min-h-28 items-center justify-center text-sm text-muted'}>
           {transactions.length ? 'Updating transactions. Showing last loaded information.' : `Loading ${transactionPanel}…`}
         </p>
       )}
       {!invalidActiveHistoryDates && transactionState.status === 'error' && (
         <div className={transactions.length ? undefined : 'flex min-h-28 items-center justify-center'}>
-          <PanelError panel={transactionPanel} retry={loadTransactions} retained={(historyDataCurrent && Boolean(history)) || summaryTransactions.length > 0} focusTarget={showHistory ? 'transaction-history-title' : 'recent-transactions'} />
+          <PanelError panel={transactionPanel} retry={loadTransactions} message={transactionState.message} retained={(historyDataCurrent && Boolean(history)) || summaryTransactions.length > 0} focusTarget={showHistory ? 'transaction-history-title' : 'recent-transactions'} />
         </div>
       )}
       {showHistory && historyDataCurrent && !invalidActiveHistoryDates && transactionState.status === 'success' && history?.total !== null && history?.total !== undefined && (
@@ -1027,7 +1043,7 @@ export default function DashboardPage() {
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label htmlFor="history-type" className="text-xs font-medium text-forest">Transaction type</label>
-          <select id="history-type" value={historyType} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { type: event.target.value }))} className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+          <select id="history-type" value={historyType} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { type: event.target.value }))} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
             <option value="">All transactions</option>
             <option value="CREDIT">Credit</option>
             <option value="PAYMENT">Payment</option>
@@ -1037,18 +1053,18 @@ export default function DashboardPage() {
         </div>
         <div className="space-y-1">
           <label htmlFor="history-customer" className="text-xs font-medium text-forest">Customer</label>
-          <select id="history-customer" value={historyCustomerId} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { customerId: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+          <select id="history-customer" value={historyCustomerId} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { customerId: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
             <option value="">All customers</option>
             {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name} · {customer.id}</option>)}
           </select>
         </div>
         <div className="space-y-1">
           <label htmlFor="history-from" className="text-xs font-medium text-forest">From date</label>
-          <input id="history-from" type="date" max={historyTo || undefined} value={historyFrom} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { from: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+          <input id="history-from" type="date" max={historyTo || undefined} value={historyFrom} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { from: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
         </div>
         <div className="space-y-1">
           <label htmlFor="history-to" className="text-xs font-medium text-forest">To date</label>
-          <input id="history-to" type="date" min={historyFrom || undefined} value={historyTo} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { to: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+          <input id="history-to" type="date" min={historyFrom || undefined} value={historyTo} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { to: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1074,7 +1090,14 @@ export default function DashboardPage() {
             <h2 id="voice-input" tabIndex={-1} className="text-xl font-semibold text-forest">Voice input</h2>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button type="button" onClick={startVoiceCapture} disabled={previewBusy || Boolean(voicePreview)} aria-pressed={voicePhase === 'listening'} aria-describedby="voice-feedback" className="w-48 shrink-0">
+            <Button type="button" onClick={startVoiceCapture} onKeyDown={event => {
+              if (event.key !== 'Escape' || recognitionStartupTimerRef.current === null) return;
+              event.preventDefault();
+              event.stopPropagation();
+              releaseRecognition(true);
+              setVoicePhase('idle');
+              setVoiceFeedback('Microphone startup cancelled. You can try again when ready.');
+            }} disabled={previewBusy || Boolean(voicePreview)} aria-pressed={voicePhase === 'listening'} aria-describedby="voice-feedback" className="w-48 shrink-0">
               <span className="mic-motion mr-2 flex h-7 w-7 items-center justify-center">
                 <Mic aria-hidden="true" className="h-5 w-5" />
               </span>
@@ -1109,7 +1132,7 @@ export default function DashboardPage() {
                 : voicePreview.readyForConfirmation ? 'Backend marked complete (not independently verified)' : 'Backend marked incomplete'}</dd>
               {voicePreview.type && <><dt className="font-medium text-muted">Transaction type</dt><dd className="text-forest">{voicePreview.type}</dd></>}
               {voicePreview.customerName && <><dt className="font-medium text-muted">Customer name from parser</dt><dd className="break-words text-forest">{voicePreview.customerName}</dd></>}
-              {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">₹{String(voicePreview.amount)}</dd></>}
+              {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest [overflow-wrap:anywhere]">{formatInrAmount(voicePreview.amount)}</dd></>}
               {voicePreview.description && <><dt className="font-medium text-muted">Description</dt><dd className="break-words text-forest">{voicePreview.description}</dd></>}
               <dt className="font-medium text-muted">Preview ID</dt><dd className="break-all font-mono text-xs text-forest">{voicePreview.id}</dd>
               <dt className="font-medium text-muted">Prepared</dt><dd className="text-forest">{formatDate(voicePreview.createdAt)}</dd>
@@ -1126,15 +1149,16 @@ export default function DashboardPage() {
         </div>
       </ScrollReveal>
 
-      <section id="financial-summary" tabIndex={-1} aria-label="Dashboard summary">
+      <section id="financial-summary" tabIndex={-1} aria-labelledby="dashboard-summary-heading">
+        <h2 id="dashboard-summary-heading" className="sr-only">Dashboard summary</h2>
         {summaryState.status === 'error' && (
           <div className="mb-2">
-            <PanelError panel="dashboard summary" retry={loadDashboard} focusTarget="financial-summary" retained={Boolean(summary)} />
+            <PanelError panel="dashboard summary" retry={loadDashboard} focusTarget="financial-summary" retained={Boolean(summary)} message={summaryState.message} />
           </div>
         )}
         <ScrollReveal className="grid gap-4 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {statCards.map((card) => {
-            const amount = summary ? formatCurrency(summary[card.key]) : '—';
+            const amount = formatInrAmount(summary?.[card.key]);
             const compactAmount = amount.length > 12;
             return (
             <Card key={card.key}>
@@ -1150,7 +1174,7 @@ export default function DashboardPage() {
                     <span className="h-4 w-16 max-w-[80%] rounded-full bg-forest/10" />
                   </div>
                 ) : (
-                  <p className={`whitespace-nowrap font-bold leading-8 text-forest ${compactAmount ? 'text-[clamp(0.75rem,1.5vw,1.125rem)]' : 'text-2xl min-[375px]:max-sm:text-[clamp(1rem,4vw,1.25rem)]'}`}>
+                  <p className={`font-bold leading-8 text-forest [overflow-wrap:anywhere] ${compactAmount ? 'text-[clamp(0.75rem,1.5vw,0.9375rem)]' : 'text-2xl min-[375px]:max-sm:text-[clamp(1rem,4vw,1.25rem)]'}`}>
                     {amount}
                   </p>
                 )}
@@ -1176,10 +1200,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <div className="space-y-3">
-              {customerNotice && <p role={customerNoticeError ? 'alert' : 'status'} className="rounded-md border border-forest/10 bg-beige-light p-3 text-sm text-forest">{customerNotice}</p>}
+              {customerNotice && !mutationUncertain && !(customerEditor && customerFormError) && <p role={customerNoticeError ? 'alert' : 'status'} className="rounded-md border border-forest/10 bg-beige-light p-3 text-sm text-forest">{customerNotice}</p>}
               {mutationUncertain && (
-                <div ref={uncertainPanel} tabIndex={-1} className="space-y-3 rounded-md border border-forest/20 bg-beige-light p-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-forest" role="alert">
-                  <p>The request result is uncertain. Do not send it again. Refresh the customer list and inspect the customer before deciding what to do next.</p>
+                <div ref={uncertainPanel} tabIndex={-1} className="space-y-3 rounded-md border border-forest/20 bg-beige-light p-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-forest" role="group" aria-labelledby="customer-mutation-warning">
+                  <p id="customer-mutation-warning">{customerNotice}</p>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" disabled={mutationPending} onClick={() => { void loadCustomers(); }}>Refresh customer list</Button>
                     <Button type="button" variant="outline" onClick={acknowledgeUncertainMutation}>I understand; allow switching</Button>
@@ -1208,13 +1232,13 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-1">
                     <label htmlFor="customer-name-input" className="text-sm font-medium text-forest">Customer name <span aria-hidden="true">*</span></label>
-                    <input ref={customerNameField} id="customer-name-input" name="name" required autoComplete="off" value={customerNameInput} onChange={event => setCustomerNameInput(event.target.value)} aria-describedby={customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                    <input ref={customerNameField} id="customer-name-input" name="name" required autoComplete="off" value={customerNameInput} onChange={event => setCustomerNameInput(event.target.value)} aria-describedby={mutationUncertain ? 'customer-mutation-warning' : customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                   </div>
                   <div className="space-y-1">
                     <label htmlFor="customer-phone-input" className="text-sm font-medium text-forest">Phone number <span className="font-normal text-muted">(optional)</span></label>
-                    <input id="customer-phone-input" name="phone" type="tel" autoComplete="off" value={customerPhoneInput} onChange={event => setCustomerPhoneInput(event.target.value)} aria-describedby={customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                    <input id="customer-phone-input" name="phone" type="tel" autoComplete="off" value={customerPhoneInput} onChange={event => setCustomerPhoneInput(event.target.value)} aria-describedby={mutationUncertain ? 'customer-mutation-warning' : customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                   </div>
-                  {customerFormError && <p id="customer-form-error" role="alert" className="text-sm text-forest-dark">{customerFormError}</p>}
+                  {customerFormError && !mutationUncertain && <p id="customer-form-error" role="alert" className="text-sm text-forest-dark">{customerFormError}</p>}
                   <div className="flex flex-wrap gap-2">
                     <Button type="submit" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'}>{mutationPending ? 'Saving…' : customerEditor.mode === 'create' ? 'Save customer' : 'Save changes'}</Button>
                     <Button type="button" variant="outline" disabled={mutationPending} onClick={() => closeCustomerForm()}>Cancel</Button>
@@ -1222,7 +1246,7 @@ export default function DashboardPage() {
                 </form>
               )}
               {deleteTarget && (
-                <section aria-labelledby="delete-customer-title" className="space-y-3 rounded-lg border border-forest/20 bg-beige-light p-4 text-forest" onKeyDown={event => {
+                <section role="dialog" aria-labelledby="delete-customer-title" aria-describedby="delete-customer-identity delete-customer-warning" className="space-y-3 rounded-lg border border-forest/20 bg-beige-light p-4 text-forest" onKeyDown={event => {
                   if (event.key !== 'Escape' || mutationPending) return;
                   event.preventDefault();
                   event.stopPropagation();
@@ -1231,8 +1255,7 @@ export default function DashboardPage() {
                 }}>
                   <div>
                     <h3 id="delete-customer-title" className="font-semibold">Delete this customer?</h3>
-                    <p className="mt-1 break-words text-sm">{deleteTarget.name}{deleteTarget.phone ? ` · ${deleteTarget.phone}` : ''}</p>
-                    <p className="text-xs">Customer ID {deleteTarget.id}</p>
+                    <p id="delete-customer-identity" className="mt-1 break-words text-sm">{deleteTarget.name}{deleteTarget.phone ? ` · ${deleteTarget.phone}` : ''}<span className="block text-xs">Customer ID {deleteTarget.id}</span></p>
                   </div>
                   <p id="delete-customer-warning" className="text-sm">This removes the customer from the active list. Existing transaction history is retained, but the customer ledger may no longer be available. Check the balance before continuing.</p>
                   <div className="flex flex-wrap gap-2">
@@ -1258,7 +1281,7 @@ export default function DashboardPage() {
                         event.preventDefault();
                         clearSearch();
                       }}
-                      className="block min-h-11 w-full rounded-sm border border-forest/20 bg-white py-2 pl-3 pr-16 text-base text-forest placeholder:text-muted focus:border-forest focus:outline-2 focus:outline-offset-2 focus:outline-forest [&::-webkit-search-cancel-button]:hidden"
+                      className="block min-h-11 w-full rounded-sm border border-forest/60 bg-white py-2 pl-3 pr-16 text-base text-forest placeholder:text-muted focus:border-forest focus:outline-2 focus:outline-offset-2 focus:outline-forest [&::-webkit-search-cancel-button]:hidden"
                     />
                     {customerSearch && (
                       <Button type="button" variant="link" size="sm" aria-label="Clear search" onClick={clearSearch} className="absolute inset-y-0 right-0">
@@ -1269,17 +1292,18 @@ export default function DashboardPage() {
                 </div>
               )}
               {customerState.status === 'loading' && customers.length > 0 && <p role="status" className="text-sm text-muted">Updating customers. Showing last loaded information.</p>}
-              {customerState.status === 'error' && customers.length > 0 && <PanelError panel="customers" retry={loadCustomers} focusTarget="customers" retained />}
+              {customerState.status === 'error' && customers.length > 0 && <PanelError panel="customers" retry={loadCustomers} focusTarget="customers" message={customerState.message} retained />}
               {customerState.status === 'loading' && !customers.length ? (
                 <p role="status" className="flex min-h-28 items-center justify-center text-sm text-muted">Loading customers…</p>
               ) : customerState.status === 'error' && !customers.length ? (
                 <div className="flex min-h-28 items-center justify-center">
-                  <PanelError panel="customers" retry={loadCustomers} focusTarget="customers" />
+                  <PanelError panel="customers" retry={loadCustomers} focusTarget="customers" message={customerState.message} />
                 </div>
               ) : filteredCustomers.length > 0 ? (
                 filteredCustomers.map(customer => {
                   const isOpen = selectedCustomerId === customer.id;
                   const duplicate = (customerNameCounts.get(customer.name.trim().toLowerCase()) ?? 0) > 1;
+                  const outstanding = formatInrAmount(customer.outstandingBalance);
                   return (
                     <div key={customer.id} className="space-y-2">
                       <div className="rounded-lg border border-forest/10 p-3">
@@ -1294,7 +1318,7 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-1">
-                          <span className={`min-w-0 whitespace-nowrap font-bold text-forest ${formatCurrency(customer.outstandingBalance).length > 12 ? 'text-[clamp(0.75rem,3.5vw,1.125rem)]' : 'text-lg'}`}>{formatCurrency(customer.outstandingBalance)}</span>
+                          <span className={`min-w-0 max-w-full font-bold text-forest [overflow-wrap:anywhere] ${outstanding.length > 12 ? 'text-[clamp(0.75rem,3.5vw,1.125rem)]' : 'text-lg'}`}>{outstanding}</span>
                           <span className="text-xs text-muted">outstanding</span>
                         </div>
                           <Button
@@ -1317,7 +1341,7 @@ export default function DashboardPage() {
                           View ledger
                         </Button>
                           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                            <Button type="button" variant="link" size="sm" className="px-0 underline" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => openEditCustomer(customer, event.currentTarget)}>Edit</Button>
+                            <Button type="button" variant="link" size="sm" className="px-0 underline" aria-label={`Edit ${customer.name}${duplicate ? `, customer ID ${customer.id}` : ''}`} disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => openEditCustomer(customer, event.currentTarget)}>Edit</Button>
                             <Button type="button" variant="link" size="sm" className="px-0 underline" aria-label={`Delete ${customer.name}${customer.phone ? `, ${customer.phone}` : ''}, customer ID ${customer.id}`} disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => openDeleteConfirmation(customer, event.currentTarget)}>Delete</Button>
                           </div>
                       </div>
@@ -1377,7 +1401,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="space-y-1">
                         <label htmlFor="manual-transaction-type" className="text-sm font-medium text-forest">Transaction type</label>
-                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
                           <option value="CREDIT">Credit</option>
                           <option value="PAYMENT">Payment</option>
                           <option value="SALE">Sale</option>
@@ -1386,19 +1410,19 @@ export default function DashboardPage() {
                       </div>
                       <div className="space-y-1">
                         <label htmlFor="manual-customer" className="text-sm font-medium text-forest">Customer {manualType === 'CREDIT' || manualType === 'PAYMENT' ? <span aria-hidden="true">*</span> : <span className="font-normal text-muted">(optional)</span>}</label>
-                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
+                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
                           <option value="">{customerState.status === 'loading' ? 'Loading customers…' : customers.length ? 'Select a customer' : 'No customers available'}</option>
                           {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name} · {customer.id}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1">
                         <label htmlFor="manual-amount" className="text-sm font-medium text-forest">Amount (₹)</label>
-                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-11 w-full rounded-sm border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                         <p id="manual-amount-guidance" className="text-xs text-muted">Positive amount; up to two decimal places. No rounding is applied in this review.</p>
                       </div>
                       <div className="space-y-1">
                         <label htmlFor="manual-description" className="text-sm font-medium text-forest">Description <span className="font-normal text-muted">(optional)</span></label>
-                        <textarea id="manual-description" rows={2} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full rounded-sm border border-forest/20 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <textarea id="manual-description" rows={2} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                       </div>
                       {manualError && <p role="alert" className="text-sm text-forest-dark">{manualError}</p>}
                       <div className="flex flex-wrap gap-2">
@@ -1415,11 +1439,10 @@ export default function DashboardPage() {
                       <dl className="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
                         <dt className="font-medium text-muted">Type</dt><dd className="text-forest">{manualType}</dd>
                         {manualCustomer && <><dt className="font-medium text-muted">Customer</dt><dd className="break-words text-forest">{manualCustomer.name} · {manualCustomer.id}</dd></>}
-                        <dt className="font-medium text-muted">Amount</dt><dd className="whitespace-nowrap text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest">{formatCurrency(manualAmount)}</dd>
+                        <dt className="font-medium text-muted">Amount</dt><dd className="text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest [overflow-wrap:anywhere]">{formatInrAmount(manualAmount)}</dd>
                         <dt className="font-medium text-muted">Description</dt><dd className="break-words text-forest">{manualDescription.trim() || 'No description'}</dd>
                       </dl>
                       <p role="status" className="rounded-md border border-forest/15 bg-white p-3 text-sm text-forest">Review only — nothing has been sent or recorded. The available preview API accepts a transcript, not these structured fields, so manual submission is unavailable.</p>
-                      <p className="text-xs text-muted">The current transaction service rounds amounts to whole rupees even though the database stores two decimal places. The backend team must align this before manual financial writes are enabled.</p>
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" onClick={() => setManualReview(false)}>Back to entry</Button>
                         <Button type="button" variant="link" className="px-0 underline" onClick={cancelManualEntry}>Close draft</Button>

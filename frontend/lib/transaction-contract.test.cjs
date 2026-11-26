@@ -46,6 +46,7 @@ const {
   updateTransactionHistoryFilters,
 } = loadTypeScript('./transaction-contract.ts');
 const { TransactionDetailStatus, TransactionRowStatus } = loadTsx('../components/dashboard/transaction-status.tsx');
+const { formatInrAmount } = loadTypeScript('./inr.ts');
 
 const row = {
   id: 'txn-1',
@@ -81,6 +82,18 @@ test('normalizes a transaction detail response without inventing optional data',
   assert.equal(normalizeTransaction({ ...row, id: '' }), null);
 });
 
+test('formats history and VOIDED detail amounts from the raw decimal field', () => {
+  const transaction = Object.freeze({ ...row, amount: '100000.75', status: 'VOIDED', formattedAmount: '₹1,00,001' });
+  const history = normalizeTransactionHistory([transaction]);
+  const detail = normalizeTransaction(transaction);
+  for (const result of [history.transactions[0], detail]) {
+    assert.equal(formatInrAmount(result.amount), '₹1,00,000.75');
+    assert.equal(result.amount, '100000.75');
+    assert.equal(result.status, 'VOIDED');
+  }
+  assert.equal(transaction.amount, '100000.75');
+});
+
 test('preserves ACTIVE and VOIDED status and rejects absent or unrecognized status', () => {
   assert.equal(normalizeTransaction({ ...row, status: 'ACTIVE' }).status, 'ACTIVE');
   assert.equal(normalizeTransaction({ ...row, status: 'VOIDED' }).status, 'VOIDED');
@@ -93,7 +106,8 @@ test('preserves ACTIVE and VOIDED status and rejects absent or unrecognized stat
 test('renders an accessible voided label for history and customer-ledger rows', () => {
   const markup = renderToStaticMarkup(React.createElement(TransactionRowStatus, { status: 'VOIDED' }));
   assert.match(markup, /Voided · excluded from balance/);
-  assert.match(markup, /aria-label="Voided transaction; excluded from the outstanding balance"/);
+  assert.match(markup, /aria-hidden="true">Voided · excluded from balance/);
+  assert.match(markup, /class="sr-only">Voided transaction; excluded from the outstanding balance/);
   assert.equal(renderToStaticMarkup(React.createElement(TransactionRowStatus, { status: 'ACTIVE' })), '');
 });
 
@@ -101,7 +115,8 @@ test('renders explicit active and voided transaction-detail status', () => {
   const voided = renderToStaticMarkup(React.createElement(TransactionDetailStatus, { status: 'VOIDED' }));
   const active = renderToStaticMarkup(React.createElement(TransactionDetailStatus, { status: 'ACTIVE' }));
   assert.match(voided, /Voided · excluded from balance/);
-  assert.match(voided, /aria-label="Voided transaction; excluded from the outstanding balance"/);
+  assert.match(voided, /aria-hidden="true">Voided · excluded from balance/);
+  assert.match(voided, /class="sr-only">Voided transaction; excluded from the outstanding balance/);
   assert.match(active, />Active</);
 });
 
@@ -157,4 +172,11 @@ test('validates manual INR amount text without rounding or floating-point conver
   assert.equal(isValidManualAmount('-1'), false);
   assert.equal(isValidManualAmount('1.234'), false);
   assert.equal(isValidManualAmount('1000000000000'), false);
+});
+
+test('formats manual review without rewriting the draft amount', () => {
+  for (const [draft, display] of [['25.5', '₹25.50'], ['25.50', '₹25.50'], ['0.05', '₹0.05'], ['999999999999.99', '₹9,99,99,99,99,999.99']]) {
+    assert.equal(isValidManualAmount(draft), true);
+    assert.equal(formatInrAmount(draft), display);
+  }
 });

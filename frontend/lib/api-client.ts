@@ -1,6 +1,7 @@
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
+const REQUEST_TIMEOUT_MS = 15_000;
 
-export type ApiErrorKind = 'http' | 'network' | 'invalid-response' | 'aborted' | 'session-changed' | 'business-changed';
+export type ApiErrorKind = 'http' | 'network' | 'timeout' | 'invalid-response' | 'aborted' | 'session-changed' | 'business-changed';
 export type ApiRequestScope = 'public' | 'auth' | 'business';
 
 export class ApiError extends Error {
@@ -45,9 +46,9 @@ class ApiClient {
   }
 
   setSession(token: string) {
+    this.sessionVersion += 1;
     this.cancelAuthenticatedRequests();
     this.clearBusinessContext();
-    this.sessionVersion += 1;
     this.token = token;
   }
 
@@ -59,15 +60,15 @@ class ApiClient {
   }
 
   setBusinessContext(businessId: string) {
-    this.cancelBusinessRequests();
     this.businessVersion += 1;
     this.businessId = businessId;
+    this.cancelBusinessRequests();
   }
 
   clearBusinessContext() {
-    this.cancelBusinessRequests();
     this.businessVersion += 1;
     this.businessId = null;
+    this.cancelBusinessRequests();
   }
 
   getToken() {
@@ -90,10 +91,15 @@ class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, password }),
       signal,
-    }, 'public');
+    }, 'public', REQUEST_TIMEOUT_MS);
   }
 
-  async requestJson(path: string, init: RequestInit = {}, scope: ApiRequestScope = 'business'): Promise<unknown> {
+  async requestJson(
+    path: string,
+    init: RequestInit = {},
+    scope: ApiRequestScope = 'business',
+    timeoutMs = ['GET', 'HEAD'].includes((init.method ?? 'GET').toUpperCase()) ? REQUEST_TIMEOUT_MS : undefined,
+  ): Promise<unknown> {
     const requestController = new AbortController();
     const originalSignal = init.signal;
     const requiresAuthentication = scope !== 'public';
@@ -110,12 +116,6 @@ class ApiClient {
       throw new ApiError('Select a business before requesting business data.', 'http', 403);
     }
 
-    if (requiresAuthentication) this.activeRequests.add(requestController);
-    if (requiresBusiness) this.activeBusinessRequests.add(requestController);
-    const abortFromCaller = () => requestController.abort();
-    if (originalSignal?.aborted) requestController.abort();
-    else originalSignal?.addEventListener('abort', abortFromCaller, { once: true });
-
     const headers = new Headers(init.headers);
     // Callers cannot provide or override tenant/authentication identity headers.
     headers.delete('Authorization');
@@ -124,7 +124,22 @@ class ApiClient {
     if (token) headers.set('Authorization', `Bearer ${token}`);
     if (businessId) headers.set('X-Business-ID', businessId);
 
-    try {
+    const assertCurrent = () => {
+      if (requiresAuthentication && sessionVersion !== this.sessionVersion) {
+        throw new ApiError('Your sign-in session changed. Please try again.', 'session-changed');
+      }
+      if (requiresBusiness && (businessVersion !== this.businessVersion || businessId !== this.businessId)) {
+        throw new ApiError('The selected business changed. Please refresh its data.', 'business-changed');
+      }
+      if (requestController.signal.aborted) {
+        if (requestController.signal.reason?.name === 'TimeoutError') {
+          throw new ApiError('The request timed out. Please try again.', 'timeout');
+        }
+        throw new ApiError('Request cancelled.', 'aborted');
+      }
+    };
+
+    const readResponse = async () => {
       let response: Response;
       try {
         response = await fetch(`${API_BASE_URL}${path}`, {
@@ -133,37 +148,44 @@ class ApiClient {
           signal: requestController.signal,
           credentials: 'omit',
         });
-      } catch (error) {
-        if (requestController.signal.aborted) {
-          throw new ApiError('Request cancelled.', 'aborted');
-        }
+      } catch {
+        assertCurrent();
         throw new ApiError('Could not reach HisabNaki. Check your connection and try again.', 'network');
       }
 
+      assertCurrent();
       let payload: unknown;
       try {
         payload = await response.json();
       } catch {
-        if (requiresAuthentication && sessionVersion !== this.sessionVersion) {
-          throw new ApiError('Your sign-in session changed. Please try again.', 'session-changed');
-        }
-        if (requiresBusiness && (businessVersion !== this.businessVersion || businessId !== this.businessId)) {
-          throw new ApiError('The selected business changed. Please refresh its data.', 'business-changed');
-        }
-        if (requiresAuthentication && response.status === 401) this.onUnauthorized?.();
-        if (!response.ok) {
-          if (requiresBusiness && response.status === 403) this.onBusinessForbidden?.();
-          throw new ApiError(this.messageForStatus(response.status), 'http', response.status);
-        }
-        throw new ApiError('The server returned an invalid response.', 'invalid-response', response.status);
+        // Preserve HTTP error handling even when the server omits a JSON body.
       }
+      return { response, payload };
+    };
 
-      if (requiresAuthentication && sessionVersion !== this.sessionVersion) {
-        throw new ApiError('Your sign-in session changed. Please try again.', 'session-changed');
+    if (requiresAuthentication) this.activeRequests.add(requestController);
+    if (requiresBusiness) this.activeBusinessRequests.add(requestController);
+    const abortFromCaller = () => requestController.abort(originalSignal?.reason);
+    if (originalSignal?.aborted) abortFromCaller();
+    else originalSignal?.addEventListener('abort', abortFromCaller, { once: true });
+
+    let onAbort: (() => void) | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      assertCurrent();
+      // Aborting fetch also stops its response body. The race guarantees the
+      // caller settles even if an underlying transport never observes abort.
+      const cancelled = new Promise<never>((_resolve, reject) => {
+        onAbort = () => {
+          try { assertCurrent(); } catch (error) { reject(error); }
+        };
+        requestController.signal.addEventListener('abort', onAbort, { once: true });
+      });
+      if (timeoutMs !== undefined) {
+        timeout = setTimeout(() => requestController.abort(new DOMException('Request timed out.', 'TimeoutError')), timeoutMs);
       }
-      if (requiresBusiness && (businessVersion !== this.businessVersion || businessId !== this.businessId)) {
-        throw new ApiError('The selected business changed. Please refresh its data.', 'business-changed');
-      }
+      const { response, payload } = await Promise.race([readResponse(), cancelled]);
+      assertCurrent();
 
       if (!response.ok) {
         const status = response.status;
@@ -180,6 +202,8 @@ class ApiClient {
 
       return payload;
     } finally {
+      clearTimeout(timeout);
+      if (onAbort) requestController.signal.removeEventListener('abort', onAbort);
       originalSignal?.removeEventListener('abort', abortFromCaller);
       this.activeRequests.delete(requestController);
       this.activeBusinessRequests.delete(requestController);

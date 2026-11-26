@@ -17,6 +17,7 @@ function loginError(error: unknown) {
   if (error.status === 403) return 'This account cannot sign in right now. Contact your business administrator.';
   if (error.status === 429) return 'Too many sign-in attempts. Please wait a little before trying again.';
   if (error.status && error.status >= 500) return 'HisabNaki is temporarily unavailable. Please try again later.';
+  if (error.kind === 'timeout') return 'Sign-in timed out. Your details are still here. Please try again.';
   if (error.kind === 'network') return 'Could not connect to HisabNaki. Check your connection and try again.';
   if (error.kind === 'invalid-response') return 'HisabNaki returned an invalid sign-in response. Please try again later.';
   return error.message;
@@ -30,9 +31,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [invalidField, setInvalidField] = useState('');
   const [signupVerified, setSignupVerified] = useState(false);
   const [logoutError, setLogoutError] = useState('');
-  const submitLock = useRef(false);
+  const loginRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    const request = loginRequest.current;
+    loginRequest.current = null;
+    request?.abort();
+  }, []);
 
   useEffect(() => {
     try {
@@ -46,24 +54,34 @@ export default function LoginPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitLock.current || !identifier.trim() || !password) {
-      if (!identifier.trim() || !password) setFeedback('Enter your email or phone number and password.');
+    if (loginRequest.current) return;
+    if (!identifier.trim() || !password) {
+      const field = !identifier.trim() ? 'identifier' : 'password';
+      setInvalidField(field);
+      setSignupVerified(false);
+      setFeedback(field === 'identifier' ? 'Enter your email or phone number.' : 'Enter your password.');
+      window.requestAnimationFrame(() => document.getElementById(field)?.focus());
       return;
     }
 
-    submitLock.current = true;
+    const controller = new AbortController();
+    loginRequest.current = controller;
     setSubmitting(true);
+    setInvalidField('');
     setFeedback('');
     setSignupVerified(false);
     try {
-      await login(normalizeLoginIdentifier(identifier), password);
+      await login(normalizeLoginIdentifier(identifier), password, controller);
+      if (controller.signal.aborted) return;
       setPassword('');
       router.replace('/business/select');
     } catch (error) {
-      setFeedback(loginError(error));
+      if (!controller.signal.aborted) setFeedback(loginError(error));
     } finally {
-      submitLock.current = false;
-      setSubmitting(false);
+      if (loginRequest.current === controller) {
+        loginRequest.current = null;
+        setSubmitting(false);
+      }
     }
   };
 
@@ -99,23 +117,23 @@ export default function LoginPage() {
               <h1 id="login-heading" className="text-2xl font-semibold tracking-tight">Sign in to HisabNaki</h1>
               <p className="mt-2 text-sm text-muted">Use the email or phone number linked to your account.</p>
 
-              <form className="mt-6 space-y-5" onSubmit={submit} noValidate>
+              <form className="mt-6 space-y-5" aria-labelledby="login-heading" onSubmit={submit} noValidate>
                 <div>
                   <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium">Email or phone number</label>
-                  <input id="identifier" name="identifier" type="text" autoComplete="username" required value={identifier} onChange={event => setIdentifier(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="name@example.com or phone" aria-describedby={feedback ? 'login-feedback' : undefined} />
+                  <input id="identifier" name="identifier" type="text" autoComplete="username" required value={identifier} onChange={event => setIdentifier(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base text-forest placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="name@example.com or phone" aria-invalid={invalidField === 'identifier' || undefined} aria-describedby={invalidField === 'identifier' ? 'login-feedback' : undefined} />
                 </div>
 
                 <div>
                   <label htmlFor="password" className="mb-1.5 block text-sm font-medium">Password</label>
                   <div className="relative">
-                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white py-2 pl-3 pr-12 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" aria-describedby={feedback ? 'login-feedback' : undefined} />
+                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/60 bg-white py-2 pl-3 pr-12 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" aria-invalid={invalidField === 'password' || undefined} aria-describedby={invalidField === 'password' ? 'login-feedback' : undefined} />
                     <button type="button" className="absolute inset-y-0 right-0 inline-flex min-h-11 min-w-11 items-center justify-center rounded-r-md text-forest hover:bg-beige focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-forest" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
                       {showPassword ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                     </button>
                   </div>
                 </div>
 
-                {feedback && <p id="login-feedback" role={signupVerified ? 'status' : 'alert'} className="rounded-md border border-forest/15 bg-beige p-3 text-sm text-forest">{feedback}</p>}
+                {feedback && <p id="login-feedback" role={invalidField ? undefined : signupVerified ? 'status' : 'alert'} className="rounded-md border border-forest/15 bg-beige p-3 text-sm text-forest">{feedback}</p>}
 
                 <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>
                   {submitting ? 'Signing in…' : 'Sign in'}

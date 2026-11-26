@@ -5,10 +5,10 @@ export function TransactionRowStatus({ status }: { status: TransactionStatus }) 
 
   return (
     <span
-      aria-label="Voided transaction; excluded from the outstanding balance"
       className="mt-1 inline-flex rounded-full border border-forest/10 bg-beige-light px-2 py-1 text-xs font-medium text-muted"
     >
-      Voided · excluded from balance
+      <span aria-hidden="true">Voided · excluded from balance</span>
+      <span className="sr-only">Voided transaction; excluded from the outstanding balance</span>
     </span>
   );
 }
@@ -16,10 +16,10 @@ export function TransactionRowStatus({ status }: { status: TransactionStatus }) 
 export function TransactionDetailStatus({ status }: { status: TransactionStatus }) {
   return status === 'VOIDED' ? (
     <span
-      aria-label="Voided transaction; excluded from the outstanding balance"
       className="inline-flex rounded-full border border-forest/10 bg-beige-light px-2 py-1 text-xs font-medium text-muted"
     >
-      Voided · excluded from balance
+      <span aria-hidden="true">Voided · excluded from balance</span>
+      <span className="sr-only">Voided transaction; excluded from the outstanding balance</span>
     </span>
   ) : (
     <span className="text-forest">Active</span>

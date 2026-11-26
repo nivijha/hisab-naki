@@ -19,14 +19,14 @@ type LoginResponse = {
 
 type AuthContextValue = {
   status: AuthStatus;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string, controller: AbortController) => Promise<void>;
   logout: () => boolean;
   getToken: () => string | null;
   memberships: BusinessMembership[];
   membershipsStatus: MembershipLoadStatus;
   membershipsError: string | null;
   businessAccessError: string | null;
-  refreshMemberships: (force?: boolean) => Promise<void>;
+  refreshMemberships: (force?: boolean) => Promise<boolean>;
   selectedBusiness: SelectedBusiness | null;
   businessContextGeneration: number;
   selectBusiness: (businessId: string) => boolean;
@@ -64,7 +64,9 @@ function parseLoginResponse(value: unknown): LoginResponse {
 function membershipErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 403) return 'You are not allowed to view these business memberships.';
+    if (error.status === 429) return 'Too many requests. Please wait before retrying.';
     if (error.status && error.status >= 500) return 'HisabNaki is temporarily unavailable. Please try again later.';
+    if (error.kind === 'timeout') return 'Loading your businesses timed out. Please try again.';
     if (error.kind === 'network') return 'Could not connect to HisabNaki. Check your connection and retry.';
     if (error.kind === 'invalid-response') return 'HisabNaki returned an invalid membership response. Please retry.';
     return error.message;
@@ -83,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokenExpiry = useRef<number | null>(null);
   const sessionGeneration = useRef(0);
   const membershipController = useRef<AbortController | null>(null);
-  const membershipPromise = useRef<Promise<void> | null>(null);
+  const membershipPromise = useRef<Promise<boolean> | null>(null);
   const membershipStateRef = useRef<MembershipLoadStatus>('idle');
   const [memberships, setMemberships] = useState<BusinessMembership[]>([]);
   const [membershipsStatus, setMembershipsStatus] = useState<MembershipLoadStatus>('idle');
@@ -153,6 +155,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       apiClient.setUnauthorizedHandler(null);
       apiClient.setBusinessForbiddenHandler(null);
+      loginController.current?.abort();
+      membershipController.current?.abort();
+      apiClient.clearSession();
     };
   }, [handleBusinessForbidden, logout, updateStatus]);
 
@@ -169,9 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timeout);
   }, [logout, status]);
 
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string, controller: AbortController) => {
     loginController.current?.abort();
-    const controller = new AbortController();
     loginController.current = controller;
     const attempt = ++loginAttempt.current;
 
@@ -208,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (statusRef.current !== 'authenticated' || !apiClient.getToken()) {
       return Promise.reject(new ApiError('Please sign in to view businesses.', 'http', 401));
     }
-    if (!force && membershipStateRef.current === 'success') return Promise.resolve();
+    if (!force && membershipStateRef.current === 'success') return Promise.resolve(true);
     if (!force && membershipPromise.current) return membershipPromise.current;
     if (force) membershipController.current?.abort();
 
@@ -221,16 +225,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const request = (async () => {
       try {
         const result = await apiClient.requestJson('/api/auth/memberships', { signal: controller.signal }, 'auth');
-        if (controller.signal.aborted || requestSession !== sessionGeneration.current) return;
+        if (controller.signal.aborted || requestSession !== sessionGeneration.current) return false;
         const activeMemberships = parseActiveMemberships(result);
         setMemberships(activeMemberships);
         setBusinessAccessError(null);
         updateMembershipStatus('success');
+        return true;
       } catch (error) {
-        if (controller.signal.aborted || requestSession !== sessionGeneration.current) return;
-        if (error instanceof ApiError && error.status === 401) return;
+        if (controller.signal.aborted || requestSession !== sessionGeneration.current) return false;
         setMembershipsError(membershipErrorMessage(error));
         updateMembershipStatus('error');
+        return false;
       } finally {
         if (membershipController.current === controller) {
           membershipController.current = null;

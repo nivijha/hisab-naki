@@ -1,3 +1,5 @@
+import { readInrAmount } from './inr';
+
 export type PreviewType = 'CREDIT' | 'PAYMENT' | 'SALE' | 'EXPENSE';
 
 export type TransactionPreview = {
@@ -40,7 +42,8 @@ export function normalizeTransactionPreview(value: unknown, expectedBusinessId: 
     || typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt))) return null;
 
   if (value.customerName !== undefined && value.customerName !== null && typeof value.customerName !== 'string') return null;
-  if (value.amount !== undefined && value.amount !== null && (typeof value.amount !== 'number' || !Number.isFinite(value.amount) || value.amount <= 0)) return null;
+  if (value.amount !== undefined && value.amount !== null
+    && (typeof value.amount !== 'number' || value.amount <= 0 || readInrAmount(value.amount) === null)) return null;
   if (value.type !== undefined && value.type !== null && (typeof value.type !== 'string' || !writeTypes.has(value.type as PreviewType))) return null;
   if (value.description !== undefined && value.description !== null && typeof value.description !== 'string') return null;
   const expectedType = intentType[value.intent];

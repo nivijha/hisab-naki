@@ -15,6 +15,17 @@ export function Navbar() {
   const [activeHref, setActiveHref] = useState('');
   const menuTrigger = useRef<HTMLButtonElement>(null);
 
+  const focusLinkedSection = (href: string) => {
+    setOpen(false);
+    window.requestAnimationFrame(() => {
+      const heading = document.getElementById(href.slice(1))?.querySelector('h2');
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      }
+    });
+  };
+
   const handleNavigationKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     if (!open || event.key !== 'Tab' || !menuTrigger.current?.getClientRects().length) return;
 
@@ -110,7 +121,7 @@ export function Navbar() {
             onClick={() => setOpen((value) => !value)}
             aria-label={open ? 'Close menu' : 'Open menu'}
             aria-expanded={open}
-            aria-controls="mobile-navigation"
+            aria-controls={open ? 'mobile-navigation' : undefined}
           >
             {open ? <X aria-hidden="true" className="h-5 w-5" /> : <Menu aria-hidden="true" className="h-5 w-5" />}
           </button>
@@ -135,7 +146,7 @@ export function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  onClick={() => setOpen(false)}
+                  onClick={() => focusLinkedSection(link.href)}
                   aria-current={activeHref === link.href ? 'location' : undefined}
                   className="flex min-h-12 items-center border-b border-beige/15 text-sm font-medium text-beige aria-[current=location]:border-purple aria-[current=location]:font-semibold"
                 >

@@ -9,15 +9,17 @@ import { Footer } from '@/components/sections/footer';
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-beige text-forest">
+    <div className="min-h-screen bg-beige text-forest">
       <Navbar />
-      <Hero />
-      <ProductDemo />
-      <ProblemSolution />
-      <Features />
-      <UseCases />
-      <FinalCta />
+      <main>
+        <Hero />
+        <ProductDemo />
+        <ProblemSolution />
+        <Features />
+        <UseCases />
+        <FinalCta />
+      </main>
       <Footer />
-    </main>
+    </div>
   );
 }

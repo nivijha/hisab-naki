@@ -5,15 +5,22 @@ const path = require('node:path');
 const test = require('node:test');
 const ts = require('typescript');
 
-const filename = path.resolve(__dirname, './preview-contract.ts');
-const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText;
-const loaded = new Module(filename, module);
-loaded.filename = filename;
-loaded.paths = Module._nodeModulePaths(path.dirname(filename));
-loaded._compile(output, filename);
-const { normalizeTransactionPreview, isSupportedPreviewWrite } = loaded.exports;
+function loadTypeScript(relativePath, dependencies = {}) {
+  const filename = path.resolve(__dirname, relativePath);
+  const output = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const loaded = new Module(filename, module);
+  loaded.filename = filename;
+  loaded.paths = Module._nodeModulePaths(path.dirname(filename));
+  const originalRequire = loaded.require.bind(loaded);
+  loaded.require = specifier => dependencies[specifier] ?? originalRequire(specifier);
+  loaded._compile(output, filename);
+  return loaded.exports;
+}
+
+const inr = loadTypeScript('./inr.ts');
+const { normalizeTransactionPreview, isSupportedPreviewWrite } = loadTypeScript('./preview-contract.ts', { './inr': inr });
 
 const base = {
   id: 'preview-1', businessId: 'business-alpha', intent: 'ADD_CREDIT', customerName: 'Raju',
@@ -26,6 +33,12 @@ test('validates a complete credit preview and preserves the exact server amount'
   assert.ok(preview);
   assert.equal(preview.amount, 450.5);
   assert.equal(isSupportedPreviewWrite(preview), true);
+});
+
+test('formats voice paise without modifying the parsed amount', () => {
+  const preview = normalizeTransactionPreview({ ...base, amount: 25.5 }, 'business-alpha');
+  assert.equal(inr.formatInrAmount(preview.amount), '₹25.50');
+  assert.equal(preview.amount, 25.5);
 });
 
 test('accepts explicit mocked repayment, sale, and expense preview types', () => {
@@ -47,7 +60,9 @@ test('keeps incomplete and read-only previews non-confirmable', () => {
 });
 
 test('rejects malformed, unsafe, and cross-business preview data', () => {
-  assert.equal(normalizeTransactionPreview({ ...base, amount: NaN }, 'business-alpha'), null);
+  for (const amount of [NaN, 0, -1, 0.001, 25.555, 2 ** 46, '25.50']) {
+    assert.equal(normalizeTransactionPreview({ ...base, amount }, 'business-alpha'), null);
+  }
   assert.equal(normalizeTransactionPreview({ ...base, confidence: 1.2 }, 'business-alpha'), null);
   assert.equal(normalizeTransactionPreview({ ...base, missingFields: 'amount' }, 'business-alpha'), null);
   assert.equal(normalizeTransactionPreview({ ...base, type: 'UNKNOWN' }, 'business-alpha'), null);
