@@ -171,7 +171,7 @@ export default function SignupVerificationPage() {
             <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>{submitting ? 'Verifying…' : 'Verify phone'}</Button>
           </form>
 
-          <Button type="button" variant="outline" className="mt-3 w-full aria-disabled:pointer-events-none aria-disabled:opacity-50" aria-disabled={resending || submitting || resendCooldownSeconds > 0} aria-label={resendCooldownSeconds > 0 ? 'Resend code unavailable' : undefined} aria-busy={resending} onClick={() => { void resend(); }}>
+          <Button type="button" variant="outline" className="mt-3 w-full aria-disabled:pointer-events-none aria-disabled:opacity-50" aria-disabled={resending || submitting || resendCooldownSeconds > 0} aria-busy={resending} onClick={() => { void resend(); }}>
             {resending ? 'Requesting code…' : resendCooldownSeconds > 0 ? `Resend code in ${resendCooldownSeconds}s` : 'Resend code'}
           </Button>
           <p className="mt-5 text-center text-sm text-muted">Already verified? <Link href="/login" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Sign in</Link></p>
