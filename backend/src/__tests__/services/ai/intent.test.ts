@@ -19,6 +19,15 @@ describe('AI intent service - interpretTranscript', () => {
     assert.strictEqual(result.confidence, 0.9);
   });
 
+  it('handles reported Hindi/Devanagari payment phrase', async () => {
+    const result = await interpretTranscript('हेलो राहुल को मैं 450 दिए');
+    assert.strictEqual(result.intent, 'RECORD_PAYMENT');
+    assert.strictEqual(result.customerName, 'राहुल');
+    assert.strictEqual(result.amount, 450);
+    assert.strictEqual(result.confidence, 0.9);
+    assert.deepStrictEqual(result.missingFields, []);
+  });
+
   it('returns ADD_CREDIT for English credit phrase', async () => {
     const result = await interpretTranscript('Raju owes 200 rupees.');
     assert.strictEqual(result.intent, 'ADD_CREDIT');
@@ -87,12 +96,21 @@ describe('AI intent service - interpretTranscript', () => {
     // Safe fallback is a read-only intent, not ADD_CREDIT
     assert.strictEqual(result.intent, 'GET_BALANCE');
     assert.strictEqual(result.confidence, 0);
+    assert.ok(result.missingFields.includes('intent'));
   });
 
   it('defaults to safe fallback for ambiguous input with no clear intent', async () => {
     const result = await interpretTranscript('maybe something');
     assert.strictEqual(result.intent, 'GET_BALANCE');
     assert.strictEqual(result.confidence, 0);
+    assert.ok(result.missingFields.includes('intent'));
+  });
+
+  it('does not classify amount-only sentence as balance lookup', async () => {
+    const result = await interpretTranscript('450');
+    assert.strictEqual(result.confidence, 0);
+    assert.ok(result.missingFields.includes('intent'));
+    assert.ok(result.missingFields.includes('customerName'));
   });
 
   it('description defaults to Ledger update when cleaning removes all meaningful text', async () => {

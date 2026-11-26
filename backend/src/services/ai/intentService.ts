@@ -1,5 +1,5 @@
 export type ParsedIntent = {
-  intent: 
+  intent:
     | 'ADD_CREDIT'
     | 'RECORD_PAYMENT'
     | 'ADD_SALE'
@@ -15,361 +15,342 @@ export type ParsedIntent = {
   missingFields: string[];
 };
 
-const spokenNumberMap: Record<string, number> = {
-  zero: 0,
-  shunya: 0,
-  ek: 1,
-  do: 2,
-  teen: 3,
-  char: 4,
-  chaar: 4,
-  paanch: 5,
-  panch: 5,
-  pach: 5,
-  che: 6,
-  chhe: 6,
-  saat: 7,
-  sat: 7,
-  aath: 8,
-  ath: 8,
-  nau: 9,
-  das: 10,
-  gyarah: 11,
-  barah: 12,
-  terah: 13,
-  chaudah: 14,
-  pandrah: 15,
-  solah: 16,
-  satarah: 17,
-  atharah: 18,
-  unnis: 19,
-  bees: 20,
-  is: 20,
-  pachas: 50,
-  sau: 100,
-  hazar: 1000,
-  hazaar: 1000,
-  lakh: 100000,
-  crore: 10000000,
-  hundred: 100,
-  thousand: 1000,
+const HINGLISH_NUMBER_WORDS: Record<string, number> = {
+  zero: 0, shunya: 0, ek: 1, one: 1, do: 2, two: 2, teen: 3, tin: 3, three: 3,
+  char: 4, chaar: 4, four: 4, paanch: 5, panch: 5, pach: 5, five: 5,
+  chhe: 6, che: 6, chhah: 6, six: 6, saat: 7, sat: 7, seven: 7,
+  aath: 8, ath: 8, eight: 8, nau: 9, nine: 9, das: 10, ten: 10,
+  gyarah: 11, eleven: 11, barah: 12, twelve: 12, terah: 13, thirteen: 13,
+  chaudah: 14, fourteen: 14, pandrah: 15, fifteen: 15, solah: 16, sixteen: 16,
+  satarah: 17, seventeen: 17, atharah: 18, eighteen: 18, unnis: 19, nineteen: 19,
+  bees: 20, twenty: 20, tees: 30, thirty: 30, chalis: 40, forty: 40,
+  pachas: 50, fifty: 50, saath: 60, sixty: 60, sattar: 70, seventy: 70,
+  assi: 80, eighty: 80, nabbe: 90, ninety: 90,
+  sau: 100, hundred: 100, hazar: 1000, hazaar: 1000, thousand: 1000, lakh: 100000, crore: 10000000,
 };
 
-const numberWordFallback: Record<string, number> = {
-  'one': 1,
-  'two': 2,
-  'three': 3,
-  'four': 4,
-  'five': 5,
-  'six': 6,
-  'seven': 7,
-  'eight': 8,
-  'nine': 9,
-  'ten': 10,
-  'eleven': 11,
-  'twelve': 12,
-  'thirteen': 13,
-  'fourteen': 14,
-  'fifteen': 15,
-  'sixteen': 16,
-  'seventeen': 17,
-  'eighteen': 18,
-  'nineteen': 19,
-  'twenty': 20,
-  'thirty': 30,
-  'forty': 40,
-  'fifty': 50,
-  'sixty': 60,
-  'seventy': 70,
-  'eighty': 80,
-  'ninety': 90,
+const DEVANAGARI_DIGITS: Record<string, string> = {
+  '०': '0', '१': '1', '२': '2', '३': '3', '४': '4', '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
 };
 
-function normalizeTranscript(input: string) {
-  return input
-    .toLowerCase()
-    .replace(/₹/g, ' rupees ')
-    .replace(/rs\.?/g, ' rupees ')
-    .replace(/rupaye|rupya|rupees|rupee/gi, ' rupees ')
+const DEVANAGARI_NUMBER_WORDS: Record<string, number> = {
+  'शून्य': 0, 'एक': 1, 'दो': 2, 'तीन': 3, 'चार': 4, 'पांच': 5, 'पाँच': 5, 'छह': 6, 'छः': 6,
+  'सात': 7, 'आठ': 8, 'नौ': 9, 'दस': 10, 'ग्यारह': 11, 'बारह': 12, 'तेरह': 13, 'चौदह': 14,
+  'पंद्रह': 15, 'सोलह': 16, 'सत्रह': 17, 'अठारह': 18, 'उन्नीस': 19, 'बीस': 20, 'तीस': 30,
+  'चालीस': 40, 'पचास': 50, 'साठ': 60, 'सत्तर': 70, 'अस्सी': 80, 'नब्बे': 90,
+  'सौ': 100, 'हजार': 1000, 'हज़ार': 1000, 'लाख': 100000, 'करोड़': 10000000,
+};
+
+const MULTIPLIERS = new Set([100, 1000, 100000, 10000000]);
+
+const FILLER_PATTERNS: RegExp[] = [
+  /\b(?:hello|hi|hey|ok|okay|please|pls|yaar|bhai|sir|madam|ji)\b/gi,
+  /(?:^|\s)(?:हेलो|हाय|अरे|अच्छा|ठीक|कृपया|प्लीज|जी|यार|भाई|साहब)(?=\s|$)/g,
+];
+
+const CREDIT_CUES = ['udhaar', 'udhar', 'credit', 'loan', 'borrow', 'khata', 'khaata', 'owes', 'owe', 'due from', 'उधार', 'क्रेडिट', 'खाता', 'खाते'];
+const PAYMENT_CUES = [
+  'payment', 'paid', 'pay', 'received', 'receive', 'collect', 'collected', 'jama', 'jamaa', 'vasool', 'wasool',
+  'de diye', 'de diya', 'de di', 'de do', 'diye', 'diya', 'dediye', 'dediya', 'paid kiya',
+  'भुगतान', 'जमा', 'वसूल', 'दे दिए', 'दे दिया', 'दिए', 'दिया', 'दे दी', 'दे दो', 'मिला', 'मिले',
+];
+const SALE_CUES = ['sale', 'sold', 'sell', 'bech', 'bik', 'bill', 'invoice', 'बिक्री', 'बेचा', 'बेची', 'बिका', 'बिल'];
+const EXPENSE_CUES = ['kharcha', 'expense', 'spent', 'spend', 'cost', 'purchase', 'buy', 'bought', 'खर्चा', 'खर्च', 'खरीदा', 'खरीदी'];
+const BALANCE_CUES = ['balance', 'baki', 'baaki', 'outstanding', 'due', 'kitna', 'kitne', 'hisaab', 'hisab', 'account', 'बकाया', 'बाकी', 'हिसाब', 'कितना', 'कितने', 'बैलेंस'];
+const TOTAL_OUTSTANDING_CUES = ['total outstanding', 'total baki', 'total baaki', 'sab baki', 'sab ka baki', 'sab ka outstanding', 'kul baki', 'kul udhaar', 'कुल बकाया', 'कुल बाकी', 'सबका बकाया', 'सब का बकाया', 'सब बकाया'];
+const TODAY_CUES = ['today', 'aaj', 'aaj ke', 'aaj ki', 'आज', 'आज के', 'आज की'];
+const TRANSACTION_LIST_CUES = ['transactions', 'transaction', 'history', 'entries', 'ledger', 'list', 'लेनदेन', 'ट्रांजैक्शन', 'हिस्ट्री', 'सूची'];
+
+function normalizeDevanagariDigits(text: string): string {
+  return text.replace(/[०-९]/g, (d) => DEVANAGARI_DIGITS[d] ?? d);
+}
+
+function normalizeTranscript(input: string): string {
+  let text = normalizeDevanagariDigits(String(input ?? ''));
+  text = text
+    .replace(/[""'`]/g, ' ')
+    .replace(/₹/g, ' rs ')
+    .replace(/\b(?:rs\.?|inr)\b/gi, ' rs ')
+    .replace(/\b(?:rupaye|rupya|rupay|rupees|rupee)\b/gi, ' rs ')
+    .replace(/(?:रुपये|रुपया|रु\.?)/g, ' rs ')
+    .replace(/(\d),(?=\d)/g, '$1')
+    .replace(/[|।,!?;:()[\]{}]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  for (const pattern of FILLER_PATTERNS) text = text.replace(pattern, ' ');
+  text = text.replace(/(\d),(?=\d)/g, '$1');
+  return text.replace(/\s+/g, ' ').trim();
 }
 
-function replaceNumberPhrases(text: string): string {
-  const replacements: [RegExp, string][] = [
-    [/\b(?:ek|one)\s+(?:hazaar|thousand)\b/g, ' 1000 '],
-    [/\b(?:do|two)\s+(?:hazaar|thousand)\b/g, ' 2000 '],
-    [/\b(?:teen|three)\s+(?:hazaar|thousand)\b/g, ' 3000 '],
-    [/\b(?:char|chaar|four)\s+(?:hazaar|thousand)\b/g, ' 4000 '],
-    [/\b(?:paanch|five)\s+(?:hazaar|thousand)\b/g, ' 5000 '],
-    [/\b(?:ek|one)\s+(?:sau|hundred)\b/g, ' 100 '],
-    [/\b(?:do|two)\s+(?:sau|hundred)\b/g, ' 200 '],
-    [/\b(?:teen|three)\s+(?:sau|hundred)\b/g, ' 300 '],
-    [/\b(?:char|chaar|four)\s+(?:sau|hundred)\b/g, ' 400 '],
-    [/\b(?:paanch|five)\s+(?:sau|hundred)\b/g, ' 500 '],
-    [/\b(?:che|chhe|six)\s+(?:sau|hundred)\b/g, ' 600 '],
-    [/\b(?:sat|saat|seven)\s+(?:sau|hundred)\b/g, ' 700 '],
-    [/\b(?:aath|eight)\s+(?:sau|hundred)\b/g, ' 800 '],
-    [/\b(?:nau|nine)\s+(?:sau|hundred)\b/g, ' 900 '],
-    [/\b(?:do|two)\s+(?:lakh)\b/g, ' 200000 '],
-    [/\b(?:ek|one)\s+(?:lakh)\b/g, ' 100000 '],
-    [/\b(?:paanch|five)\s+(?:sau|hundred)\b/g, ' 500 '],
+function includesAny(text: string, cues: string[]): boolean {
+  const lower = text.toLowerCase();
+  return cues.some((cue) => {
+    if (/[\u0900-\u097F]/.test(cue)) return text.includes(cue);
+    const escaped = cue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp(`(?:^|\\b|\\s)${escaped}(?=$|\\b|\\s)`, 'i').test(lower);
+  });
+}
+
+function parseNumericAmount(text: string): number | null {
+  const patterns = [
+    /(?:\b(?:rs)\s*)([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]+)?)/i,
+    /([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]+)?)\s*(?:rs\b|₹)/i,
+    /\b([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]+)?)\b/,
   ];
-
-  let nextText = text;
-  for (const [pattern, replacement] of replacements) {
-    nextText = nextText.replace(pattern, replacement);
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const value = Number(match[1].replace(/,/g, ''));
+      if (Number.isFinite(value) && value > 0) return value;
+    }
   }
-
-  return nextText;
+  return null;
 }
 
-function parseSpokenNumber(value: string): number | null {
-  const cleaned = replaceNumberPhrases(value)
-    .replace(/,/g, ' ')
-    .replace(/\b(?:rupees|rupaye|rs)\b/g, ' ')
-    .trim();
+function tokenToNumber(token: string): number | null {
+  const clean = token.toLowerCase().replace(/[^a-z\u0900-\u097F]/g, '');
+  if (!clean) return null;
+  if (DEVANAGARI_NUMBER_WORDS[clean] !== undefined) return DEVANAGARI_NUMBER_WORDS[clean];
+  if (HINGLISH_NUMBER_WORDS[clean] !== undefined) return HINGLISH_NUMBER_WORDS[clean];
+  if (/^\d+$/.test(clean)) return Number(clean);
+  return null;
+}
 
-  const numericMatch = cleaned.match(/\d+/);
-  if (numericMatch) {
-    return Number(numericMatch[0]);
-  }
-
-  const tokens = cleaned.split(/\s+/).filter(Boolean);
+function parseSpokenAmount(text: string): number | null {
+  const tokens = normalizeTranscript(text).toLowerCase().split(/\s+/).filter(Boolean);
   let total = 0;
   let current = 0;
-
+  let sawNumber = false;
   for (const token of tokens) {
-    const normalizedToken = token.replace(/[^a-z]/gi, '');
-
-    // Multiplier words are checked before number values so that "hazar"
-    // multiplies the running total rather than being added as 1000
-    if (normalizedToken === 'sau' || normalizedToken === 'hundred') {
-      current *= 100;
+    const value = tokenToNumber(token);
+    if (value === null) {
+      if (sawNumber) { total += current; current = 0; sawNumber = false; }
       continue;
     }
-
-    if (normalizedToken === 'hazar' || normalizedToken === 'hazaar' || normalizedToken === 'thousand') {
-      current *= 1000;
-      continue;
-    }
-
-    if (normalizedToken === 'lakh') {
-      current *= 100000;
-      continue;
-    }
-
-    if (normalizedToken === 'crore') {
-      current *= 10000000;
-      continue;
-    }
-
-    const numberValue = spokenNumberMap[normalizedToken] ?? numberWordFallback[normalizedToken];
-
-    if (typeof numberValue === 'number') {
-      current += numberValue;
-      continue;
-    }
-
-    if (!Number.isNaN(Number(token))) {
-      current += Number(token);
-      continue;
-    }
-
-    if (current > 0) {
+    sawNumber = true;
+    if (MULTIPLIERS.has(value)) {
+      current = (current === 0 ? 1 : current) * value;
       total += current;
       current = 0;
+      continue;
     }
+    current += value;
   }
-
-  if (current > 0) {
-    total += current;
-  }
-
+  if (sawNumber) total += current;
   return total > 0 ? total : null;
+}
+
+export function parseSpokenNumber(value: string): number | null {
+  return parseSpokenAmount(value);
 }
 
 function extractAmount(text: string): number | null {
   const normalized = normalizeTranscript(text);
-  const amountMatches = [
-    /(?:\b(?:rupees|rupaye|rs)\s*(?:ke|ka)?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b)/i,
-    /\b([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:rupees|rupaye|rs)?\b/i,
-    /\b(?:amount|kitne|kitna|kitni)\s*(?:rupees|rupaye|rs)?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b/i,
+  const numeric = parseNumericAmount(normalized);
+  if (numeric !== null) return numeric;
+  const amountWindowPatterns = [
+    /(?:rs\s*)([a-z\u0900-\u097F\s-]+?)(?=\s+(?:ka|ki|ke|ko|se|ne|diye|diya|de|liye|liya|udhaar|udhar|payment|baki|baaki|due|record|add)\b|$)/i,
+    /([a-z\u0900-\u097F\s-]+?)\s*(?:rs\b)/i,
   ];
-
-  for (const pattern of amountMatches) {
+  for (const pattern of amountWindowPatterns) {
     const match = normalized.match(pattern);
-    if (match) {
-      const raw = match[1] ?? match[0];
-      return Number(String(raw).replace(/,/g, ''));
+    const candidate = match?.[1]?.trim();
+    if (candidate) {
+      const parsed = parseSpokenAmount(candidate);
+      if (parsed !== null) return parsed;
     }
   }
+  return parseSpokenAmount(normalized);
+}
 
-  const spokenMatches = [
-    /(?:\b(?:rupees|rupaye|rs)\s+)([a-zA-Z\s]+?)(?=\s+(?:ka|ki|ko|se|ne|hai|diya|de|liye|liye|hue|hui))/i,
-    /\b([a-zA-Z\s]+?)\s*(?:rupees|rupaye|rs)\b/i,
+function stripAmountAndCurrency(text: string): string {
+  return normalizeTranscript(text)
+    .replace(/\b(?:rs)\b/gi, ' ')
+    .replace(/[0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]+)?/g, ' ')
+    .replace(/\b(?:zero|shunya|ek|one|do|two|teen|tin|three|char|chaar|four|paanch|panch|pach|five|chhe|che|chhah|six|saat|sat|seven|aath|ath|eight|nau|nine|das|ten|gyarah|eleven|barah|twelve|terah|thirteen|chaudah|fourteen|pandrah|fifteen|solah|sixteen|satarah|seventeen|atharah|eighteen|unnis|nineteen|bees|twenty|tees|thirty|chalis|forty|pachas|fifty|saath|sixty|sattar|seventy|assi|eighty|nabbe|ninety|sau|hundred|hazar|hazaar|thousand|lakh|crore)\b/gi, ' ')
+    .replace(/(?:शून्य|एक|दो|तीन|चार|पांच|पाँच|छह|छः|सात|आठ|नौ|दस|ग्यारह|बारह|तेरह|चौदह|पंद्रह|सोलह|सत्रह|अठारह|उन्नीस|बीस|तीस|चालीस|पचास|साठ|सत्तर|अस्सी|नब्बे|सौ|हजार|हज़ार|लाख|करोड़)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isLikelyNameToken(token: string): boolean {
+  return /^[A-Za-z][A-Za-z'.-]*$/.test(token) || /^[\u0900-\u097F][\u0900-\u097F'.-]*$/.test(token);
+}
+
+function cleanNameToken(token: string): string {
+  return token.replace(/^[^A-Za-z\u0900-\u097F]+|[^A-Za-z\u0900-\u097F'.-]+$/g, '');
+}
+
+function normalizeName(name: string): string {
+  return name.split(/\s+/).filter(Boolean).map((part) => {
+    if (/^[\u0900-\u097F'.-]+$/.test(part)) return part;
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  }).join(' ').trim();
+}
+
+function looksLikeCommandPhrase(name: string): boolean {
+  const lower = name.toLowerCase();
+  return ['total outstanding', 'aaj ke transactions', 'today transactions', 'customer transactions', 'total baki', 'sab baki', 'ledger update'].includes(lower);
+}
+
+function extractNameFromPatterns(original: string): string | undefined {
+  const text = normalizeDevanagariDigits(original).replace(/\s+/g, ' ').trim();
+  const patterns: RegExp[] = [
+    /(?:^|\s)([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?:\s+(?:ko|se|ka|ke|ki|ne|par|को|से|का|के|की|ने|पर))(?=\s|$)/u,
+    /(?:^|\s)(?:for|to|from)\s+([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?=\s|$)/iu,
+    /(?:^|\s)([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?:\s+(?:owes|paid|balance|ka|ke|ki|का|के|की))(?=\s|$)/iu,
   ];
-
-  for (const pattern of spokenMatches) {
-    const match = normalized.match(pattern);
-    if (match) {
-      const spoken = match[1]?.trim();
-      if (spoken) {
-        const parsed = parseSpokenNumber(spoken);
-        if (parsed) {
-          return parsed;
-        }
-      }
-    }
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const candidate = match?.[1]?.trim();
+    if (!candidate) continue;
+    const cleaned = normalizeName(candidate.split(/\s+/).map(cleanNameToken).filter(Boolean).join(' ')).replace(/[.]+$/g, '').trim();
+    if (cleaned && !looksLikeCommandPhrase(cleaned)) return cleaned;
   }
-
-  const fallback = parseSpokenNumber(normalized);
-  return fallback ?? null;
+  return undefined;
 }
 
 function extractCustomerName(text: string, intent: ParsedIntent['intent']): string | undefined {
-  // Read intents that do not require a customer name
-  if (intent === 'GET_TOTAL_OUTSTANDING' || intent === 'GET_TODAY_TRANSACTIONS') {
-    return undefined;
-  }
+  if (intent === 'GET_TOTAL_OUTSTANDING' || intent === 'GET_TODAY_TRANSACTIONS') return undefined;
+  const patterned = extractNameFromPatterns(text);
+  if (patterned) return patterned;
 
-  const cleaned = text
-    .toLowerCase()
-    // Remove postpositions (Hindi/English) - word-boundary anchored to avoid
-    // matching inside larger words (e.g. "ne" inside "lene")
-    .replace(/\b(?:ko|ke|ne|se|ka|ki|par|mein|for|to|from)\s+/gi, ' ')
-    // Remove transaction-related and action words
-    .replace(/\b(?:udhaar|udhar|payment|sale|kharcha|maal|baki|kitna|hai|hoga|karun|karna|kar diya|de diye|de diya|diya|diye|liye|liya|lene|hain|batao|dikhao|dikha|transactions|owes|owed|show|list|credit|expense|samaan|maal|rupees|rupaye|rs|add|record)\b/gi, ' ')
-    // Remove amounts (numeric)
-    .replace(/\b\d+(?:[.,]\d+)*\b/g, ' ')
-    // Remove currency words
-    .replace(/\b(?:rupees|rupaye|rs)\b/gi, ' ')
-    // Remove punctuation
-    .replace(/[.,!?;:]/g, ' ')
+  const withoutAmounts = stripAmountAndCurrency(text);
+  const scrubbed = withoutAmounts
+    .replace(/\b(?:udhaar|udhar|credit|payment|paid|sale|kharcha|expense|balance|baki|baaki|outstanding|due|total|today|aaj|kal|transaction|transactions|history|ledger|customer|add|record|get|show|dikhao|dikha|batao|bataye|kitna|kitne|ka|ki|ke|ko|se|ne|par|liye|liya|lena|dena|de|do|diya|diye|tha|thi|the|hai|hain|ho|hoga|hogaya|gaya|gaye|huye|hui|amount|for|to|from|and|me|mein|main|kya)\b/gi, ' ')
+    .replace(/(?:उधार|क्रेडिट|भुगतान|जमा|बिक्री|खर्चा|खर्च|बकाया|बाकी|हिसाब|कुल|आज|लेनदेन|ट्रांजैक्शन|ग्राहक|दिखाओ|बताओ|कितना|कितने|का|की|के|को|से|ने|पर|लिया|लिए|देना|दिए|दिया|दे|दो|है|हैं|था|थी|थे|हो|गया|गए|हुए|हुई|में|मैं|सामान|माल)\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-  if (!cleaned) {
-    return undefined;
-  }
-
-  const tokens = cleaned.split(/\s+/).filter(Boolean).filter((t) => /[a-z]/i.test(t));
-  if (tokens.length === 0) {
-    return undefined;
-  }
-
-  // Capitalize each token and join to support multi-word names
-  return tokens.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ');
+  const tokens = scrubbed.split(/\s+/).map(cleanNameToken).filter(isLikelyNameToken);
+  if (tokens.length === 0) return undefined;
+  const name = normalizeName(tokens.slice(0, 4).join(' '));
+  if (!name || looksLikeCommandPhrase(name)) return undefined;
+  return name;
 }
 
-function inferIntent(text: string): { intent: ParsedIntent['intent']; isFallback: boolean } {
-  const lower = text.toLowerCase();
+function inferIntent(text: string, amount: number | null): { intent: ParsedIntent['intent']; isFallback: boolean; ambiguous: boolean } {
+  const normalized = normalizeTranscript(text);
+  const lower = normalized.toLowerCase();
 
-  // Read intents first (specific to general) to avoid being shadowed by write intents
-  if (/(total.*outstanding|sab.*baki|mere customers.*paise|total kitne paise|total outstanding)/.test(lower)) {
-    return { intent: 'GET_TOTAL_OUTSTANDING', isFallback: false };
+  const isTotalOutstanding = includesAny(lower, TOTAL_OUTSTANDING_CUES) || (/\btotal\b/.test(lower) && includesAny(lower, BALANCE_CUES));
+  const isToday = includesAny(lower, TODAY_CUES);
+  const isTxnList = includesAny(lower, TRANSACTION_LIST_CUES);
+  const isBalanceCue = includesAny(lower, BALANCE_CUES);
+  const hasPaymentCue = includesAny(lower, PAYMENT_CUES) || /\b(de\s*diya|de\s*diye|diya|diye|dediye|dediya)\b/i.test(lower) || /दे\s*दिया|दे\s*दिए|दिए|दिया/.test(text);
+  const hasCreditCue = includesAny(lower, CREDIT_CUES) || /उधार/.test(text);
+  const hasSaleCue = includesAny(lower, SALE_CUES);
+  const hasExpenseCue = includesAny(lower, EXPENSE_CUES);
+  const isQuestion = /\b(kitna|kitne|kitni|kya|kaun|kab|how much|how many|what|show|batao|bataye)\b/i.test(lower) || /[?]|(?:कितना|कितने|कितनी|क्या|कौन|कब|बताओ|बताइए|दिखाओ)/.test(text);
+
+  const creditAction = /\b(udhaar\s+(?:diya|diye|do|dena|de)|udhar\s+(?:diya|diye|do|dena|de)|credit\s+do|khata\s+kholo|khaata\s+kholo|lene\s+hain|lene\s+hai)\b/i.test(lower) || /उधार\s*(?:दिया|दिए|दो|देना|दे|लिखो|चढ़ा|खोलो)/.test(text);
+  const paymentAction = /\b(de\s*diya|de\s*diye|de\s*di|de\s*do|dediye|dediya|paid\s*kiya|payment\s*kiya|jama\s*kiya|vasool\s*kiya|mil\s*gaye|mila)\b/i.test(lower) || /(?:दे\s*दिया|दे\s*दिए|दे\s*दी|दे\s*दो|जमा\s*किया|वसूल\s*किया|मिला|मिले)/.test(text);
+  const genericGive = /\b(?:diya|diye)\b/i.test(lower) || /(?:दिया|दिए)/.test(text);
+  const isPayment = hasPaymentCue || paymentAction || (genericGive && !creditAction);
+  const isCredit = hasCreditCue || creditAction;
+  const isSale = hasSaleCue;
+  const isExpense = hasExpenseCue;
+  const hasWriteCue = isPayment || isCredit || isSale || isExpense;
+
+  if (isTotalOutstanding) return { intent: 'GET_TOTAL_OUTSTANDING', isFallback: false, ambiguous: false };
+  if (isToday && isTxnList) return { intent: 'GET_TODAY_TRANSACTIONS', isFallback: false, ambiguous: false };
+  if (isTxnList && !hasWriteCue) return { intent: 'GET_CUSTOMER_TRANSACTIONS', isFallback: false, ambiguous: false };
+  if (isBalanceCue && (!hasWriteCue || isQuestion)) return { intent: 'GET_BALANCE', isFallback: false, ambiguous: false };
+
+  const writeScores: Record<string, number> = { RECORD_PAYMENT: 0, ADD_CREDIT: 0, ADD_SALE: 0, ADD_EXPENSE: 0 };
+  if (isPayment) writeScores.RECORD_PAYMENT += 2;
+  if (isCredit) writeScores.ADD_CREDIT += 2;
+  if (isSale) writeScores.ADD_SALE += 2;
+  if (isExpense) writeScores.ADD_EXPENSE += 2;
+
+  if (paymentAction) writeScores.RECORD_PAYMENT += 2;
+  if (creditAction) writeScores.ADD_CREDIT += 2;
+  if (hasCreditCue && !paymentAction) writeScores.ADD_CREDIT += 1;
+  if (hasPaymentCue && !creditAction) writeScores.RECORD_PAYMENT += 1;
+
+  if (/\b(di(?:ye|ya)|de\s*di(?:ye|ya))\b/i.test(lower) || /(?:दिए|दिया|दे\s*दिए|दे\s*दिया)/.test(text)) {
+    if (creditAction && !paymentAction) writeScores.ADD_CREDIT += 1;
+    else writeScores.RECORD_PAYMENT += 2;
   }
 
-  if (/(customer.*transactions|transactions.*customer|raju.*transactions|hisab.*dikhao)/.test(lower)) {
-    return { intent: 'GET_CUSTOMER_TRANSACTIONS', isFallback: false };
+  const ranked = Object.entries(writeScores).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
+  if (ranked.length > 0) {
+    const [topIntent, topScore] = ranked[0];
+    const secondScore = ranked[1]?.[1] ?? 0;
+    const ambiguous = ranked.length > 1 && topScore === secondScore;
+    if (!ambiguous) return { intent: topIntent as ParsedIntent['intent'], isFallback: false, ambiguous: false };
+
+    if (isBalanceCue && hasCreditCue) return { intent: 'GET_BALANCE', isFallback: false, ambiguous: false };
+    return { intent: topIntent as ParsedIntent['intent'], isFallback: false, ambiguous: true };
   }
 
-  if (/(aaj.*transaction|aaj.*transactions|today.*transaction|today.*transactions|transactions dikhao|aaj ke transactions)/.test(lower)) {
-    return { intent: 'GET_TODAY_TRANSACTIONS', isFallback: false };
-  }
-
-  if (/(kitna.*udhaar|udhaar.*kitna|balance|baki|hisaab.*hai|kitne.*paise|ka.*hisaab|kitna.*hai)/.test(lower)) {
-    return { intent: 'GET_BALANCE', isFallback: false };
-  }
-
-  // Write intents - payment checked before credit to resolve overlap on "de diye"/"de diya"/"diye"
-  if (/(payment|paid|de diye|de diya|diye|payment kar|dena|de rahe)/.test(lower)) {
-    return { intent: 'RECORD_PAYMENT', isFallback: false };
-  }
-
-  if (/(udhaar|udhar|credit|loan|dene|lene|diya|owes)/.test(lower)) {
-    return { intent: 'ADD_CREDIT', isFallback: false };
-  }
-
-  if (/(sale|sell|bech|bik|bikh|maal|sale hui|bik gay|ki sale)/.test(lower)) {
-    return { intent: 'ADD_SALE', isFallback: false };
-  }
-
-  if (/(kharcha|expense|expense hua|kharch|cost|purchase|liya|market se|wholesale)/.test(lower)) {
-    return { intent: 'ADD_EXPENSE', isFallback: false };
-  }
-
-  // Safe fallback: read-only intent, no financial write is invented for unknown input
-  return { intent: 'GET_BALANCE', isFallback: true };
+  if (amount !== null) return { intent: 'GET_BALANCE', isFallback: true, ambiguous: true };
+  return { intent: 'GET_BALANCE', isFallback: true, ambiguous: true };
 }
 
-function inferDescription(text: string): string {
-  const cleaned = text
-    .toLowerCase()
-    .replace(/^(?:raju|amit|neha|suresh)\s+/i, '')
-    .replace(/\b(?:ko|ne|se|ka|ki|me|mein|hisaab|batao|kitna|udhaar|payment|sale|kharcha|samaan|maal|rupaye|rupees|rs)\b/gi, ' ')
-    .replace(/\b(?:diya|de|di|liye|liya|kar|hue|hui|hai|hoga|suna|kya)\b/gi, ' ')
-    .replace(/\b\d+(?:[.,]\d+)*\b/g, ' ')
-    .replace(/[.,!?;:]/g, ' ')
+function inferDescription(text: string, _intent: ParsedIntent['intent'], customerName?: string): string {
+  let cleaned = stripAmountAndCurrency(text)
+    .replace(/\b(?:ko|se|ka|ke|ki|ne|par|for|to|from|me|mein|main|udhaar|udhar|credit|payment|paid|sale|kharcha|expense|balance|baki|baaki|outstanding|total|today|aaj|kal|transaction|transactions|history|ledger|add|record|get|show|dikhao|dikha|batao|bataye|kitna|kitne|diya|diye|de|do|lena|dene|dena|hai|hain|tha|thi|the|owes|owe|amount|samaan|maal|goods|item|items)\b/gi, ' ')
+    .replace(/(?:उधार|भुगतान|जमा|बिक्री|खर्चा|बकाया|बाकी|हिसाब|कुल|आज|कल|लेनदेन|दिखाओ|बताओ|कितना|कितने|को|से|का|के|की|ने|पर|दिया|दिए|दे|दो|लेना|देना|है|हैं|था|थी|में|मैं|सामान|माल)\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-  return cleaned || 'Ledger update';
+  cleaned = cleaned.replace(/[^A-Za-z\u0900-\u097F\s-]/g, ' ').replace(/[.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return 'Ledger update';
+  let tokens = cleaned.split(/\s+/).filter(Boolean);
+  const residualStop = new Set(['ledger','update','rs','rupees','rupaye','customer','name','amount','r','ka']);
+  tokens = tokens.filter((t) => !residualStop.has(t.toLowerCase()));
+  if (customerName) {
+    const nameTokens = new Set(customerName.toLowerCase().split(/\s+/).map((t)=>t.replace(/[^a-z\u0900-\u097F]/g,'')).filter(Boolean));
+    tokens = tokens.filter((t)=>!nameTokens.has(t.toLowerCase().replace(/[^a-z\u0900-\u097F]/g,'')));
+  }
+  if (tokens.length === 0) return 'Ledger update';
+  if (tokens.length === 1) {
+    const t=tokens[0].toLowerCase().replace(/[^a-zऀ-ॿ]/g,'');
+    if (customerName) {
+      const nameSet=new Set(customerName.toLowerCase().split(/\s+/).map(x=>x.replace(/[^a-zऀ-ॿ]/g,'')).filter(Boolean));
+      if(nameSet.has(t)) return 'Ledger update';
+    }
+    // Single leftover token that looks like a name in ambiguous/fallback text is not useful description.
+    if (/^[A-Z][a-z'.-]*$/.test(tokens[0]) || /^[ऀ-ॿ'.-]+$/.test(tokens[0])) return 'Ledger update';
+  }
+  const joined = tokens.join(' ').trim();
+  if (!joined) return 'Ledger update';
+  return joined;
 }
 
 export async function interpretTranscript(rawTranscript: string): Promise<ParsedIntent> {
-  const text = String(rawTranscript ?? '').trim();
-
+  const text = normalizeTranscript(rawTranscript);
   if (!text) {
-    return {
-      intent: 'GET_BALANCE',
-      confidence: 0,
-      missingFields: ['transcript', 'customerName'],
-    };
+    return { intent: 'GET_BALANCE', confidence: 0, missingFields: ['transcript', 'customerName'] };
   }
 
-  const { intent, isFallback } = inferIntent(text);
-  const customerName = isFallback ? undefined : extractCustomerName(text, intent);
   const amount = extractAmount(text);
-  const description = inferDescription(text);
+  const { intent, isFallback, ambiguous } = inferIntent(text, amount);
+  const customerName = isFallback ? undefined : extractCustomerName(text, intent);
+  const description = inferDescription(text, intent, customerName);
 
-  // Fields required per intent type
   const readIntentsNotNeedingCustomer = ['GET_TOTAL_OUTSTANDING', 'GET_TODAY_TRANSACTIONS'];
   const readIntentsNeedingCustomer = ['GET_BALANCE', 'GET_CUSTOMER_TRANSACTIONS'];
   const writeIntents = ['ADD_CREDIT', 'RECORD_PAYMENT', 'ADD_SALE', 'ADD_EXPENSE'];
 
-  const customerNameRequired =
-    readIntentsNeedingCustomer.includes(intent) || writeIntents.includes(intent);
+  const customerNameRequired = readIntentsNeedingCustomer.includes(intent) || writeIntents.includes(intent);
   const amountRequired = writeIntents.includes(intent);
-
   const missingFields = [
+    ambiguous ? 'intent' : null,
     customerNameRequired && !customerName ? 'customerName' : null,
-    amountRequired && !amount ? 'amount' : null,
+    amountRequired && amount === null ? 'amount' : null,
   ].filter(Boolean) as string[];
 
-  // Confidence scoring: reflects whether fields needed for the intent were identified
   let confidence: number;
-  if (isFallback) {
-    confidence = 0;
-  } else if (readIntentsNotNeedingCustomer.includes(intent)) {
-    // No fields required for these read intents
-    confidence = 0.9;
-  } else if (readIntentsNeedingCustomer.includes(intent)) {
-    confidence = customerName ? 0.9 : 0.5;
-  } else {
-    // Write intents: need both customerName and amount for high confidence
-    if (customerName && amount) {
-      confidence = 0.9;
-    } else if (customerName || amount) {
-      confidence = 0.5;
-    } else {
-      confidence = 0.3;
-    }
-  }
+  if (isFallback || ambiguous) confidence = 0;
+  else if (readIntentsNotNeedingCustomer.includes(intent)) confidence = 0.9;
+  else if (readIntentsNeedingCustomer.includes(intent)) confidence = customerName ? 0.9 : 0.5;
+  else if (customerName && amount !== null) confidence = 0.9;
+  else if (customerName || amount !== null) confidence = 0.5;
+  else confidence = 0.3;
 
   return {
     intent,
-    customerName,
+    customerName: customerName ?? undefined,
     amount: amount ?? undefined,
     description,
     confidence,
