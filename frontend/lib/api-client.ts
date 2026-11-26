@@ -27,7 +27,6 @@ function getMessage(value: unknown): string | undefined {
 }
 
 class ApiClient {
-  private token: string | null = null;
   private businessId: string | null = null;
   private sessionVersion = 0;
   private businessVersion = 0;
@@ -44,18 +43,14 @@ class ApiClient {
     this.onBusinessForbidden = handler;
   }
 
-  setSession(token: string) {
+  markSessionChanged() {
     this.cancelAuthenticatedRequests();
     this.clearBusinessContext();
     this.sessionVersion += 1;
-    this.token = token;
   }
 
   clearSession() {
-    this.token = null;
-    this.sessionVersion += 1;
-    this.clearBusinessContext();
-    this.cancelAuthenticatedRequests();
+    this.markSessionChanged();
   }
 
   setBusinessContext(businessId: string) {
@@ -68,10 +63,6 @@ class ApiClient {
     this.cancelBusinessRequests();
     this.businessVersion += 1;
     this.businessId = null;
-  }
-
-  getToken() {
-    return this.token;
   }
 
   private cancelAuthenticatedRequests() {
@@ -93,6 +84,13 @@ class ApiClient {
     }, 'public');
   }
 
+  async logout(signal?: AbortSignal): Promise<unknown> {
+    return this.requestJson('/api/auth/logout', {
+      method: 'POST',
+      signal,
+    }, 'auth');
+  }
+
   async requestJson(path: string, init: RequestInit = {}, scope: ApiRequestScope = 'business'): Promise<unknown> {
     const requestController = new AbortController();
     const originalSignal = init.signal;
@@ -101,11 +99,7 @@ class ApiClient {
     const sessionVersion = this.sessionVersion;
     const businessVersion = this.businessVersion;
     const businessId = requiresBusiness ? this.businessId : null;
-    const token = requiresAuthentication ? this.token : null;
 
-    if (requiresAuthentication && !token) {
-      throw new ApiError('Please sign in to continue.', 'http', 401);
-    }
     if (requiresBusiness && !businessId) {
       throw new ApiError('Select a business before requesting business data.', 'http', 403);
     }
@@ -121,7 +115,6 @@ class ApiClient {
     headers.delete('Authorization');
     headers.delete('X-Business-ID');
     headers.set('Accept', 'application/json');
-    if (token) headers.set('Authorization', `Bearer ${token}`);
     if (businessId) headers.set('X-Business-ID', businessId);
 
     try {
@@ -131,7 +124,7 @@ class ApiClient {
           ...init,
           headers,
           signal: requestController.signal,
-          credentials: 'omit',
+          credentials: 'include',
         });
       } catch (error) {
         if (requestController.signal.aborted) {

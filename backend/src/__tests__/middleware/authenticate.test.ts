@@ -59,7 +59,7 @@ function withValidToken(overrides: Partial<VerifiedToken> = {}): VerifiedToken {
 }
 
 describe('authenticate middleware', () => {
-  it('rejects a missing Authorization header with 401', async () => {
+  it('rejects missing authentication with 401', async () => {
     const middleware = createAuthenticate({
       verifyToken: () => withValidToken(),
       membershipLookup: makeLookup(activeMembership),

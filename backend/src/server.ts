@@ -12,7 +12,10 @@ import businessRoutes from './routes/businesses.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { getJwtSecret } from './services/auth/tokenService.js';
 import { assertOtpDeliveryEnvironment } from './services/auth/otpDelivery.js';
+import { assertPrototypeSignupNotEnabledInProduction } from './services/auth/prototypeSignupService.js';
 import { assertOtpHashSecretConfigured, PrismaSignupRepository } from './services/auth/signupService.js';
+import { getConfiguredFrontendOrigins, getSessionCookieOptions, resolveCorsOrigin } from './services/auth/sessionCookie.js';
+import { csrfProtection } from './middleware/csrfProtection.js';
 import { logger } from './utils/logger.js';
 
 dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
@@ -27,9 +30,13 @@ function assertStartupEnvironment(): void {
 
   assertOtpDeliveryEnvironment();
 
+  // Prototype signup (unverified password-based signup) is development-only.
+  assertPrototypeSignupNotEnabledInProduction();
+  getSessionCookieOptions(0);
+
   if (isProduction) {
-    const configuredOrigin = process.env.CORS_ORIGIN;
-    if (!configuredOrigin || configuredOrigin === '*') {
+    const configuredOrigin = getConfiguredFrontendOrigins();
+    if (configuredOrigin.length === 0 || configuredOrigin.includes('*')) {
       throw new Error('CORS_ORIGIN must be set to a specific frontend origin in production.');
     }
     getJwtSecret(); // Fails startup when the JWT secret is missing or shorter than 32 characters.
@@ -41,17 +48,18 @@ assertStartupEnvironment();
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
-
-const corsOrigin = process.env.CORS_ORIGIN ?? '*';
+app.disable('x-powered-by');
 
 app.use(
   cors({
-    origin: corsOrigin,
+    origin: resolveCorsOrigin,
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-business-id', 'Idempotency-Key'],
   })
 );
 app.use(express.json());
+app.use('/api', csrfProtection);
 
 app.get('/', (_req, res) => {
   res.json({ ok: true, message: 'HisabNaki backend is running' });

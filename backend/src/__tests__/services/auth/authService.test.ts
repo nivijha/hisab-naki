@@ -17,7 +17,6 @@ function makeUserLookup(user: AuthUserRecord | null, calls: string[] = []): Auth
       calls.push(identifier);
       return user;
     },
-    findByEmailOrPhone: async () => null,
   };
 }
 

@@ -10,6 +10,8 @@ import {
   PrismaMembershipLookup,
   type MembershipLookup,
 } from '../services/auth/membershipService.js';
+import { getCookieToken } from '../services/auth/sessionCookie.js';
+import { getBearerToken } from './authenticateToken.js';
 
 export type AuthContext = {
   userId: string;
@@ -45,16 +47,11 @@ export function createAuthenticate(dependencies: AuthenticateDependencies = {}) 
     next: NextFunction
   ): Promise<void> {
     try {
-      const authorization = req.header('authorization');
-      if (!authorization) {
-        throw new HttpError(401, 'Authorization header is required.');
-      }
-
-      const parts = authorization.split(' ');
-      const scheme = parts[0];
-      const token = parts[1];
-      if (!scheme || scheme.toLowerCase() !== 'bearer' || !token || token.trim() === '') {
-        throw new HttpError(401, 'Bearer token is required.');
+      const bearerToken = getBearerToken(req.header('authorization'));
+      const cookieToken = getCookieToken(req);
+      const token = bearerToken ?? cookieToken;
+      if (!token) {
+        throw new HttpError(401, 'Authentication is required.');
       }
 
       const verified = verifyToken(token);

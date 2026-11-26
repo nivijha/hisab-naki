@@ -10,18 +10,25 @@ export type SelectedBusiness = Pick<BusinessMembership, 'businessId' | 'business
 export type MembershipLoadStatus = 'idle' | 'loading' | 'success' | 'error';
 export type FinancialOperationStatus = 'idle' | 'pending' | 'uncertain';
 
-type LoginResponse = {
-  token: string;
-  tokenType: 'Bearer';
-  expiresAt: string;
-  expiresIn: number;
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  phoneVerifiedAt: string | null;
+};
+
+type SessionResponse = {
+  authenticated: true;
+  user: AuthUser;
 };
 
 type AuthContextValue = {
   status: AuthStatus;
+  user: AuthUser | null;
   login: (identifier: string, password: string) => Promise<void>;
-  logout: () => boolean;
-  getToken: () => string | null;
+  completeAuthenticatedSession: () => Promise<void>;
+  logout: () => Promise<boolean>;
   memberships: BusinessMembership[];
   membershipsStatus: MembershipLoadStatus;
   membershipsError: string | null;
@@ -41,24 +48,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseLoginResponse(value: unknown): LoginResponse {
+function parseSessionResponse(value: unknown): SessionResponse {
   if (!isRecord(value) || value.ok !== true || !isRecord(value.data)) {
-    throw new ApiError('The server returned an invalid sign-in response.', 'invalid-response');
+    throw new ApiError('The server returned an invalid session response.', 'invalid-response');
   }
-
-  const { token, tokenType, expiresAt, expiresIn } = value.data;
-  const expiry = typeof expiresAt === 'string' ? Date.parse(expiresAt) : NaN;
-  if (typeof token !== 'string' || !token.trim() || tokenType !== 'Bearer'
-    || !Number.isFinite(expiry) || typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0) {
-    throw new ApiError('The server returned an invalid sign-in response.', 'invalid-response');
+  const data = value.data;
+  const user = isRecord(data.user) ? data.user : null;
+  if (data.authenticated !== true || !user
+    || typeof user.id !== 'string' || !user.id.trim()
+    || typeof user.name !== 'string' || !user.name.trim()
+    || (user.email !== null && typeof user.email !== 'string')
+    || (user.phone !== null && typeof user.phone !== 'string')
+    || (user.phoneVerifiedAt !== null && typeof user.phoneVerifiedAt !== 'string')) {
+    throw new ApiError('The server returned an invalid session response.', 'invalid-response');
   }
-
-  const effectiveExpiry = Math.min(expiry, Date.now() + expiresIn * 1000);
-  if (effectiveExpiry <= Date.now()) {
-    throw new ApiError('The sign-in session has already expired. Please try again.', 'invalid-response');
-  }
-
-  return { token, tokenType, expiresAt: new Date(effectiveExpiry).toISOString(), expiresIn };
+  return {
+    authenticated: true,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      phoneVerifiedAt: user.phoneVerifiedAt,
+    },
+  };
 }
 
 function membershipErrorMessage(error: unknown) {
@@ -78,9 +91,9 @@ function membershipErrorMessage(error: unknown) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const statusRef = useRef<AuthStatus>('loading');
+  const [user, setUser] = useState<AuthUser | null>(null);
   const loginAttempt = useRef(0);
   const loginController = useRef<AbortController | null>(null);
-  const tokenExpiry = useRef<number | null>(null);
   const sessionGeneration = useRef(0);
   const membershipController = useRef<AbortController | null>(null);
   const membershipPromise = useRef<Promise<void> | null>(null);
@@ -125,8 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFinancialOperationStatus(next);
   }, []);
 
-  const logout = useCallback((force = false) => {
-    if (!force && financialOperationRef.current !== 'idle') return false;
+  const resetLocalSession = useCallback(() => {
     loginAttempt.current += 1;
     sessionGeneration.current += 1;
     loginController.current?.abort();
@@ -134,78 +146,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     membershipController.current?.abort();
     membershipController.current = null;
     membershipPromise.current = null;
-    tokenExpiry.current = null;
     clearBusiness();
     apiClient.clearSession();
+    setUser(null);
     setMemberships([]);
     updateMembershipStatus('idle');
     setMembershipsError(null);
     setBusinessAccessError(null);
     updateFinancialOperationStatus('idle');
     updateStatus('unauthenticated');
-    return true;
   }, [clearBusiness, updateFinancialOperationStatus, updateMembershipStatus, updateStatus]);
 
+  const logout = useCallback(async () => {
+    if (financialOperationRef.current !== 'idle') return false;
+    try {
+      await apiClient.logout();
+    } catch {
+      // Clear local state even if the cookie-clearing request fails.
+    }
+    resetLocalSession();
+    return true;
+  }, [resetLocalSession]);
+
   useEffect(() => {
-    updateStatus('unauthenticated');
-    apiClient.setUnauthorizedHandler(() => { logout(true); });
+    apiClient.setUnauthorizedHandler(() => { resetLocalSession(); });
     apiClient.setBusinessForbiddenHandler(handleBusinessForbidden);
     return () => {
       apiClient.setUnauthorizedHandler(null);
       apiClient.setBusinessForbiddenHandler(null);
     };
-  }, [handleBusinessForbidden, logout, updateStatus]);
-
-  useEffect(() => {
-    if (status !== 'authenticated') return;
-    const token = apiClient.getToken();
-    if (!token) {
-      logout();
-      return;
-    }
-    const expiry = tokenExpiry.current;
-    if (!expiry) return;
-    const timeout = window.setTimeout(() => { logout(true); }, Math.max(0, expiry - Date.now()));
-    return () => window.clearTimeout(timeout);
-  }, [logout, status]);
-
-  const login = useCallback(async (identifier: string, password: string) => {
-    loginController.current?.abort();
-    const controller = new AbortController();
-    loginController.current = controller;
-    const attempt = ++loginAttempt.current;
-
-    try {
-      const raw = await apiClient.login(identifier, password, controller.signal);
-      if (attempt !== loginAttempt.current || controller.signal.aborted) {
-        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
-      }
-      const response = parseLoginResponse(raw);
-      const expiration = Date.parse(response.expiresAt);
-      if (expiration <= Date.now()) throw new ApiError('The sign-in session has expired. Please try again.', 'invalid-response');
-
-      sessionGeneration.current += 1;
-      clearBusiness();
-      setMemberships([]);
-      updateMembershipStatus('idle');
-      setMembershipsError(null);
-      setBusinessAccessError(null);
-      updateFinancialOperationStatus('idle');
-      tokenExpiry.current = expiration;
-      apiClient.setSession(response.token);
-      updateStatus('authenticated');
-    } catch (error) {
-      if (attempt !== loginAttempt.current || controller.signal.aborted) {
-        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
-      }
-      throw error;
-    } finally {
-      if (loginController.current === controller) loginController.current = null;
-    }
-  }, [clearBusiness, updateFinancialOperationStatus, updateMembershipStatus, updateStatus]);
+  }, [handleBusinessForbidden, resetLocalSession]);
 
   const refreshMemberships = useCallback((force = false) => {
-    if (statusRef.current !== 'authenticated' || !apiClient.getToken()) {
+    if (statusRef.current !== 'authenticated') {
       return Promise.reject(new ApiError('Please sign in to view businesses.', 'http', 401));
     }
     if (!force && membershipStateRef.current === 'success') return Promise.resolve();
@@ -242,6 +215,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return request;
   }, [updateMembershipStatus]);
 
+  const restoreSession = useCallback(async () => {
+    const generation = ++sessionGeneration.current;
+    updateStatus('loading');
+    try {
+      const raw = await apiClient.requestJson('/api/auth/session', { method: 'GET' }, 'auth');
+      if (generation !== sessionGeneration.current) return;
+      const session = parseSessionResponse(raw);
+      setUser(session.user);
+      setBusinessAccessError(null);
+      setMembershipsError(null);
+      updateMembershipStatus('idle');
+      updateStatus('authenticated');
+      void refreshMemberships(true).catch(() => undefined);
+    } catch (error) {
+      if (generation !== sessionGeneration.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        resetLocalSession();
+        return;
+      }
+      resetLocalSession();
+    }
+  }, [refreshMemberships, resetLocalSession, updateMembershipStatus, updateStatus]);
+
+  useEffect(() => {
+    void restoreSession();
+  }, [restoreSession]);
+
+  const completeAuthenticatedSession = useCallback(async () => {
+    apiClient.markSessionChanged();
+    clearBusiness();
+    setMemberships([]);
+    updateMembershipStatus('idle');
+    setMembershipsError(null);
+    setBusinessAccessError(null);
+    updateFinancialOperationStatus('idle');
+    await restoreSession();
+  }, [clearBusiness, restoreSession, updateFinancialOperationStatus, updateMembershipStatus]);
+
+  const login = useCallback(async (identifier: string, password: string) => {
+    loginController.current?.abort();
+    const controller = new AbortController();
+    loginController.current = controller;
+    const attempt = ++loginAttempt.current;
+
+    try {
+      await apiClient.login(identifier, password, controller.signal);
+      if (attempt !== loginAttempt.current || controller.signal.aborted) {
+        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
+      }
+      await completeAuthenticatedSession();
+    } catch (error) {
+      if (attempt !== loginAttempt.current || controller.signal.aborted) {
+        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
+      }
+      throw error;
+    } finally {
+      if (loginController.current === controller) loginController.current = null;
+    }
+  }, [completeAuthenticatedSession]);
+
   const selectBusiness = useCallback((businessId: string) => {
     const membership = memberships.find(item => item.businessId === businessId && item.status === 'ACTIVE');
     if (!membership || statusRef.current !== 'authenticated') return false;
@@ -273,12 +306,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true as const };
   }, [clearBusiness]);
 
-  const getToken = useCallback(() => apiClient.getToken(), []);
   const value = useMemo(() => ({
     status,
+    user,
     login,
+    completeAuthenticatedSession,
     logout,
-    getToken,
     memberships,
     membershipsStatus,
     membershipsError,
@@ -292,20 +325,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setFinancialOperationStatus: updateFinancialOperationStatus,
   }), [
     beginBusinessSwitch,
+    businessAccessError,
     businessContextGeneration,
+    completeAuthenticatedSession,
     financialOperationStatus,
-    getToken,
     login,
     logout,
     memberships,
     membershipsError,
-    businessAccessError,
     membershipsStatus,
     refreshMemberships,
     selectBusiness,
     selectedBusiness,
     status,
     updateFinancialOperationStatus,
+    user,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

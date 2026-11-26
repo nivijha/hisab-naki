@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import type { NextFunction, Request, Response } from 'express';
 import {
   createLoginRateLimiter,
+  prototypeSignupRateLimiter,
   signupRateLimiter,
   signupResendRateLimiter,
   signupVerifyRateLimiter,
@@ -73,10 +74,17 @@ describe('signup rate limiters', () => {
     assert.strictEqual(runLimiter(signupResendRateLimiter, '10.0.0.2'), true, 'fourth attempt blocked');
   });
 
-  it('signupVerifyRateLimiter blocks after its default maximum of 10', () => {
+  it('signupVerifyRateLimiter blocks after its default maximum of 10', async () => {
     for (let index = 0; index < 10; index += 1) {
       assert.strictEqual(runLimiter(signupVerifyRateLimiter, '10.0.0.3'), false);
     }
     assert.strictEqual(runLimiter(signupVerifyRateLimiter, '10.0.0.3'), true, 'eleventh attempt blocked');
+  });
+
+  it('prototypeSignupRateLimiter blocks after its default maximum of 5', () => {
+    for (let index = 0; index < 5; index += 1) {
+      assert.strictEqual(runLimiter(prototypeSignupRateLimiter, '10.0.0.4'), false);
+    }
+    assert.strictEqual(runLimiter(prototypeSignupRateLimiter, '10.0.0.4'), true, 'sixth attempt blocked');
   });
 });

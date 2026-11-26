@@ -1,8 +1,23 @@
 import { ApiError, apiClient } from './api-client';
-import { isSignupVerified, parseCreatedFirstBusiness, parseResendResponse, parseSignupStart } from './signup-contract';
+import { isSignupVerified, parseCreatedFirstBusiness, parsePrototypeSignupResponse, parseResendResponse, parseSignupStart } from './signup-contract';
 
 function invalidResponse(message: string) {
   return new ApiError(message, 'invalid-response');
+}
+
+export async function registerPrototypeSignup(
+  input: { name: string; email: string; phone?: string; password: string },
+  signal?: AbortSignal
+) {
+  const response = await apiClient.requestJson('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  }, 'public');
+  const parsed = parsePrototypeSignupResponse(response);
+  if (!parsed) throw invalidResponse('The server returned an invalid registration response.');
+  return parsed;
 }
 
 export async function registerSignup(input: { name: string; phone: string; password: string }, signal?: AbortSignal) {

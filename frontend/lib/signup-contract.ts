@@ -5,6 +5,28 @@ export type CreatedFirstBusiness = {
   replayed: boolean;
 };
 
+export type PrototypeSignupResponse = {
+  user: { id: string; name: string; email: string; phone: string | null };
+};
+
+function parsePrototypeUser(value: unknown): PrototypeSignupResponse['user'] | null {
+  if (!isRecord(value)) return null;
+  const { id, name, email, phone } = value;
+  if (typeof id !== 'string' || !id.trim()
+    || typeof name !== 'string' || !name.trim()
+    || typeof email !== 'string' || !email.trim()
+    || (phone !== undefined && phone !== null && typeof phone !== 'string')) return null;
+  return { id: id.trim(), name: name.trim(), email: email.trim(), phone: phone ? phone.trim() : null };
+}
+
+export function parsePrototypeSignupResponse(value: unknown): PrototypeSignupResponse | null {
+  if (!isRecord(value) || value.ok !== true || !isRecord(value.data)) return null;
+  const { user } = value.data;
+  const userParsed = parsePrototypeUser(user);
+  if (!userParsed) return null;
+  return { user: userParsed };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

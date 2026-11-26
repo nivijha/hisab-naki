@@ -89,20 +89,22 @@ export default function LoginPage() {
                 {selectedBusiness ? 'Open selected business' : 'Choose a business'}
               </Link>
               {logoutError && <p role="alert" className="mt-4 rounded-md border border-forest/15 bg-beige p-3 text-sm">{logoutError}</p>}
-              <Button type="button" className="mt-6 w-full" onClick={() => {
-                if (logout()) setFeedback('You have been signed out.');
+              <Button type="button" className="mt-6 w-full" onClick={async () => {
+                setLogoutError('');
+                const ok = await logout();
+                if (ok) setFeedback('You have been signed out.');
                 else setLogoutError('A transaction is pending or its result is uncertain. Do not repeat it; sign-out is blocked until the operation is safe to leave.');
               }}>Log out</Button>
             </>
           ) : (
             <>
               <h1 id="login-heading" className="text-2xl font-semibold tracking-tight">Sign in to HisabNaki</h1>
-              <p className="mt-2 text-sm text-muted">Use the email or phone number linked to your account.</p>
+              <p className="mt-2 text-sm text-muted">Use the email address linked to your account.</p>
 
               <form className="mt-6 space-y-5" onSubmit={submit} noValidate>
                 <div>
-                  <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium">Email or phone number</label>
-                  <input id="identifier" name="identifier" type="text" autoComplete="username" required value={identifier} onChange={event => setIdentifier(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="name@example.com or phone" aria-describedby={feedback ? 'login-feedback' : undefined} />
+                  <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium">Email address</label>
+                  <input id="identifier" name="identifier" type="email" autoComplete="email" required value={identifier} onChange={event => setIdentifier(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="user@example.com" aria-describedby={feedback ? 'login-feedback' : undefined} />
                 </div>
 
                 <div>

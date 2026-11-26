@@ -22,7 +22,7 @@ test.afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test('sends the existing login contract without bearer or business headers', async () => {
+test('sends the login contract with credentials and no browser token headers', async () => {
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url).endsWith('/api/auth/login'), true);
     assert.equal(init.method, 'POST');
@@ -30,8 +30,8 @@ test('sends the existing login contract without bearer or business headers', asy
     const headers = new Headers(init.headers);
     assert.equal(headers.has('Authorization'), false);
     assert.equal(headers.has('X-Business-ID'), false);
-    assert.equal(init.credentials, 'omit');
-    return new Response(JSON.stringify({ ok: true, data: { token: 'jwt-value' } }), { status: 200 });
+    assert.equal(init.credentials, 'include');
+    return new Response(JSON.stringify({ ok: true, data: { tokenType: 'Bearer' } }), { status: 200 });
   };
   await apiClient.login('shop@example.in', 'secret-value');
 });
@@ -56,13 +56,13 @@ test('preserves rate-limit feedback for login', async () => {
   await assert.rejects(apiClient.login('a', 'b'), error => error instanceof ApiError && error.status === 429 && error.message === 'Too many attempts.');
 });
 
-test('supports authenticated onboarding requests without a selected-business header', async () => {
-  apiClient.setSession('onboarding-test-jwt');
+test('supports authenticated onboarding requests with credentials and no business header', async () => {
   globalThis.fetch = async (_url, init) => {
     const headers = new Headers(init.headers);
-    assert.equal(headers.get('Authorization'), 'Bearer onboarding-test-jwt');
+    assert.equal(headers.has('Authorization'), false);
     assert.equal(headers.has('X-Business-ID'), false);
     assert.equal(headers.get('Idempotency-Key'), 'onboard-key-123');
+    assert.equal(init.credentials, 'include');
     return new Response(JSON.stringify({ ok: true, data: {} }), { status: 201 });
   };
   await apiClient.requestJson('/api/businesses', {
@@ -70,4 +70,14 @@ test('supports authenticated onboarding requests without a selected-business hea
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'onboard-key-123' },
     body: JSON.stringify({ name: 'Nivi Shop' }),
   }, 'auth');
+});
+
+test('logout posts to session logout endpoint with credentials', async () => {
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url).endsWith('/api/auth/logout'), true);
+    assert.equal(init.method, 'POST');
+    assert.equal(init.credentials, 'include');
+    return new Response(JSON.stringify({ ok: true, data: { loggedOut: true } }), { status: 200 });
+  };
+  await apiClient.logout();
 });

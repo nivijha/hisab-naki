@@ -5,6 +5,7 @@ import {
   verifyAccessToken,
   type VerifiedToken,
 } from '../services/auth/tokenService.js';
+import { getCookieToken } from '../services/auth/sessionCookie.js';
 import { HttpError } from './authenticate.js';
 
 export type AuthenticatedUser = { userId: string };
@@ -12,6 +13,17 @@ export type AuthenticatedUser = { userId: string };
 export type AuthenticateTokenDependencies = {
   verifyToken?: (token: string) => VerifiedToken;
 };
+
+export function getBearerToken(authorization: string | undefined): string | null {
+  if (!authorization) return null;
+  const parts = authorization.split(' ');
+  const scheme = parts[0];
+  const token = parts[1];
+  if (!scheme || scheme.toLowerCase() !== 'bearer' || !token || token.trim() === '') {
+    return null;
+  }
+  return token;
+}
 
 export function createAuthenticateToken(
   dependencies: AuthenticateTokenDependencies = {}
@@ -26,16 +38,11 @@ export function createAuthenticateToken(
     next: NextFunction
   ): Promise<void> {
     try {
-      const authorization = req.header('authorization');
-      if (!authorization) {
-        throw new HttpError(401, 'Authorization header is required.');
-      }
-
-      const parts = authorization.split(' ');
-      const scheme = parts[0];
-      const token = parts[1];
-      if (!scheme || scheme.toLowerCase() !== 'bearer' || !token || token.trim() === '') {
-        throw new HttpError(401, 'Bearer token is required.');
+      const bearerToken = getBearerToken(req.header('authorization'));
+      const cookieToken = getCookieToken(req);
+      const token = bearerToken ?? cookieToken;
+      if (!token) {
+        throw new HttpError(401, 'Authentication is required.');
       }
 
       const verified = verifyToken(token);

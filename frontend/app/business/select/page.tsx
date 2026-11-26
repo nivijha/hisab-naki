@@ -7,7 +7,7 @@ import { Mic } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-client';
-import { createFirstBusiness, createIdempotencyKey, currentSessionSubject, FIRST_BUSINESS_OPERATION_PREFIX } from '@/lib/signup-api';
+import { createFirstBusiness, createIdempotencyKey, FIRST_BUSINESS_OPERATION_PREFIX } from '@/lib/signup-api';
 
 type PendingBusinessOperation = { name: string; key: string };
 
@@ -26,7 +26,7 @@ function businessSetupError(error: unknown) {
   if (!(error instanceof ApiError)) return 'We could not confirm shop setup. Check your businesses before trying again.';
   if (error.status === 400) return error.message === 'Validation failed' ? 'Check the shop name and try again.' : error.message;
   if (error.status === 401) return 'Your sign-in expired. Sign in again, then check your business list.';
-  if (error.status === 403) return 'Your phone must be verified before you can create a shop. Sign out and finish phone verification first.';
+  if (error.status === 403) return 'You cannot create a shop yet. Verify your phone first or sign in with your verified phone.';
   if (error.status === 409) return 'Shop setup conflicts with an existing request or business. Refresh your business list before trying again.';
   if (error.status === 429) return 'Too many shop setup attempts. Please wait before trying again.';
   if (error.kind === 'network' || error.kind === 'aborted' || error.kind === 'session-changed' || error.kind === 'invalid-response' || (error.status !== undefined && error.status >= 500)) {
@@ -51,7 +51,7 @@ export default function BusinessSelectionPage() {
     selectBusiness,
     logout,
     financialOperationStatus,
-    getToken,
+    user,
   } = useAuth();
   const router = useRouter();
   const [selectionError, setSelectionError] = useState('');
@@ -63,8 +63,7 @@ export default function BusinessSelectionPage() {
   const [pendingOperation, setPendingOperation] = useState<PendingBusinessOperation | null>(null);
   const [createdBusinessName, setCreatedBusinessName] = useState('');
   const creationLock = useRef(false);
-  const sessionSubject = currentSessionSubject(getToken());
-  const operationStorageKey = sessionSubject ? `${FIRST_BUSINESS_OPERATION_PREFIX}${encodeURIComponent(sessionSubject)}` : null;
+  const operationStorageKey = user?.id ? `${FIRST_BUSINESS_OPERATION_PREFIX}${encodeURIComponent(user.id)}` : null;
 
   useEffect(() => {
     if (status !== 'authenticated' || !operationStorageKey) return;
@@ -79,8 +78,10 @@ export default function BusinessSelectionPage() {
     } catch { /* The in-memory operation still protects retries during this page session. */ }
   }, [operationStorageKey, status]);
 
-  const signOut = () => {
-    if (logout()) router.replace('/login');
+  const signOut = async () => {
+    setLogoutError('');
+    const ok = await logout();
+    if (ok) router.replace('/login');
     else setLogoutError('A saved change is pending or its result is uncertain. Do not repeat it; sign-out is blocked until you have reviewed the result.');
   };
 

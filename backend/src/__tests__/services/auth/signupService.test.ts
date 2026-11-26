@@ -1,20 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-<<<<<<< HEAD
 import {
   assertOtpHashSecretConfigured,
   createOtpCodeHash,
   createSignupService,
   maskPhone,
+  PrismaSignupRepository,
   resolveOtpHashSecret,
   type OtpDelivery,
   type SignupChallenge,
   type SignupRepository,
 } from '../../../services/auth/signupService.js';
-=======
-import { createOtpCodeHash, createSignupService, PrismaSignupRepository, type OtpDelivery, type SignupChallenge, type SignupRepository } from '../../../services/auth/signupService.js';
 import type { PrismaClient } from '@prisma/client';
->>>>>>> 6c993a36fb96d59d5ef8392d70155ad5d31fc029
 import { HttpError } from '../../../middleware/authenticate.js';
 
 const SECRET = 'signup-tests-hash-secret-that-is-32-chars-minimum';
@@ -184,7 +181,6 @@ describe('signup service', () => {
   });
 });
 
-<<<<<<< HEAD
 describe('maskPhone', () => {
   it('masks a normal Indian number keeping only the last four digits', () => {
     const masked = maskPhone('9876543210');
@@ -263,7 +259,9 @@ describe('OTP_HASH_SECRET configuration', () => {
   it('rejects a weak OTP_HASH_SECRET in development', () => {
     setEnv({ NODE_ENV: 'development', OTP_HASH_SECRET: 'weak' });
     assert.throws(() => resolveOtpHashSecret(), /OTP_HASH_SECRET must be at least 32 characters/);
-=======
+  });
+});
+
 describe('Prisma signup advisory locks', () => {
   function makeClient(options: { failInsert?: boolean } = {}) {
     const committedStatements: string[] = [];
@@ -316,6 +314,5 @@ describe('Prisma signup advisory locks', () => {
     const failingRepository = new PrismaSignupRepository(failingClient.client);
     await assert.rejects(failingRepository.createPendingSignup({ name: 'Nivi', phone: PHONE, passwordHash: 'password-hash', codeHash: 'code-hash', expiresAt: NOW }), /simulated insert failure/);
     assert.deepEqual(failingClient.committedStatements, []);
->>>>>>> 6c993a36fb96d59d5ef8392d70155ad5d31fc029
   });
 });
