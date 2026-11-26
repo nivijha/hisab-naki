@@ -58,6 +58,12 @@ export const loginRateLimiter = createLoginRateLimiter({
   message: 'Too many login attempts. Please try again later.',
 });
 
+export const prototypeSignupRateLimiter = createLoginRateLimiter({
+  max: positiveIntEnv('PROTOTYPE_SIGNUP_RATE_LIMIT_MAX', 5),
+  windowMs: positiveIntEnv('PROTOTYPE_SIGNUP_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  message: 'Too many signup attempts. Please wait before trying again.',
+});
+
 export const aiRateLimiter = createLoginRateLimiter({
   max: positiveIntEnv('AI_RATE_LIMIT_MAX', 30),
   windowMs: positiveIntEnv('AI_RATE_LIMIT_WINDOW_MS', 60 * 1000),

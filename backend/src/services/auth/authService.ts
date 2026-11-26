@@ -9,6 +9,8 @@ import {
 } from './tokenService.js';
 import { hashPassword, verifyPassword } from './passwordService.js';
 import { logger } from '../../utils/logger.js';
+import { normalizeEmail, normalizeOptionalPhone } from './identity.js';
+import { mapUserUniqueConflict } from './prototypeSignupService.js';
 import {
   PrismaMembershipLister,
   type MembershipLister,
@@ -20,15 +22,8 @@ export type AuthUserRecord = {
   passwordHash: string | null;
 };
 
-export type EmailOrPhoneRecord = {
-  id: string;
-  email: string | null;
-  phone: string | null;
-};
-
 export interface AuthUserLookup {
   findByIdentifier(identifier: string): Promise<AuthUserRecord | null>;
-  findByEmailOrPhone(email: string, phone: string | null): Promise<EmailOrPhoneRecord | null>;
 }
 
 export class PrismaAuthUserLookup implements AuthUserLookup {
@@ -44,17 +39,6 @@ export class PrismaAuthUserLookup implements AuthUserLookup {
         ],
       },
       select: { id: true, passwordHash: true },
-    });
-  }
-
-  async findByEmailOrPhone(email: string, phone: string | null): Promise<EmailOrPhoneRecord | null> {
-    const or: Prisma.UserWhereInput[] = [{ email: { equals: email, mode: 'insensitive' } }];
-    if (phone) {
-      or.push({ phone });
-    }
-    return this.client.user.findFirst({
-      where: { OR: or },
-      select: { id: true, email: true, phone: true },
     });
   }
 }
@@ -176,44 +160,45 @@ export function createAuthService(dependencies: AuthServiceDependencies = {}) {
 
   async function register(input: RegisterInput): Promise<RegisterResult> {
     const name = input?.name?.trim();
-    const email = input?.email?.trim().toLowerCase();
     const businessName = input?.businessName?.trim();
-    const phone = input?.phone && input.phone.trim() ? input.phone.trim() : null;
-
-    if (!name || !email || !businessName) {
+    const rawEmail = String(input?.email ?? '').trim();
+    if (!name || !rawEmail || !businessName) {
       throw new HttpError(400, 'Name, email and business name are required.');
     }
+    const email = normalizeEmail(rawEmail);
+    const phone = normalizeOptionalPhone(input?.phone);
     if (typeof input.password !== 'string' || input.password.trim().length < 8) {
       throw new HttpError(400, 'Password must be at least 8 characters.');
     }
 
-    const duplicate = await userLookup.findByEmailOrPhone(email, phone);
-    if (duplicate) {
-      if (phone && duplicate.phone === phone) {
-        throw new HttpError(400, 'Phone number is already registered.');
-      }
-      throw new HttpError(400, 'Email address is already registered.');
-    }
-
     const passwordHash = await hash(input.password.trim());
 
-    const { user, business, membership } = await client.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
-        data: { name, email, phone, passwordHash },
+    let created;
+    try {
+      created = await client.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: { name, email, phone, passwordHash },
+        });
+        const createdBusiness = await tx.business.create({
+          data: { name: businessName },
+        });
+        const createdMembership = await tx.membership.create({
+          data: {
+            userId: createdUser.id,
+            businessId: createdBusiness.id,
+            role: 'OWNER',
+            status: 'ACTIVE',
+          },
+        });
+        return { user: createdUser, business: createdBusiness, membership: createdMembership };
       });
-      const createdBusiness = await tx.business.create({
-        data: { name: businessName },
-      });
-      const createdMembership = await tx.membership.create({
-        data: {
-          userId: createdUser.id,
-          businessId: createdBusiness.id,
-          role: 'OWNER',
-          status: 'ACTIVE',
-        },
-      });
-      return { user: createdUser, business: createdBusiness, membership: createdMembership };
-    });
+    } catch (error) {
+      const conflict = mapUserUniqueConflict(error);
+      if (conflict) throw conflict;
+      throw error;
+    }
+
+    const { user, business, membership } = created;
 
     let issued;
     try {

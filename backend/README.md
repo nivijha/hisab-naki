@@ -31,6 +31,8 @@ npm run dev --workspace backend
 | `AI_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Interpretation limiter defaults 30 / 60000 |
 | `PREVIEW_TTL_MS` | no | Preview TTL, default 900000 (15 min) |
 | `DASHBOARD_BUSINESS_NAME` | no | Fallback business name, default `My Business` |
+| `PROTOTYPE_SIGNUP_ENABLED` | no (prototype only) | `true`/`1` enables `POST /api/auth/signup` (email+password MVP signup). Startup fails in production when enabled (see `assertPrototypeSignupNotEnabledInProduction`). |
+| `PROTOTYPE_SIGNUP_RATE_LIMIT_MAX` / `_WINDOW_MS` | no | Prototype signup limiter defaults 5 / 900000 |
 | `OTP_DELIVERY_URL` | no | OTP delivery gateway endpoint — **required** for `POST /api/auth/register` and verify when `OTP_DELIVERY_MODE=http` (signup returns 503 without it) |
 | `OTP_DELIVERY_TOKEN` | no | Bearer token for the OTP delivery gateway |
 | `OTP_DELIVERY_CHANNEL` | no | Delivery channel `SMS` (default) or `WHATSAPP` |
@@ -42,10 +44,11 @@ Never commit real secrets. `SEED_PASSWORD` is staging-only.
 ## Authentication flow
 
 1. `POST /api/auth/login` with `{ identifier, password }` (email or phone). Returns `{ ok: true, data: { token, tokenType, expiresAt, expiresIn } }`.
-2. `POST /api/auth/register` — immediate registration: creates User + Business + OWNER/ACTIVE membership atomically and returns a JWT (see contract).
-3. `GET /api/auth/memberships` with `Authorization: Bearer <token>` (no business header needed) returns ACTIVE memberships: `[{ membershipId, businessId, businessName, role, status }]`.
-4. Every business request requires **both** `Authorization: Bearer <token>` and `x-business-id: <Business.id>`.
-5. Middleware verifies the JWT, resolves an ACTIVE membership for the requested business (business must not be soft-deleted), and attaches `req.auth = { userId, businessId, membershipId, role }`.
+2. `POST /api/auth/signup` — prototype (MVP) email+password registration: `{ name, email, password, phone? }` → creates the user and returns a login-compatible token (see contract). Requires `PROTOTYPE_SIGNUP_ENABLED=true` (see `assertPrototypeSignupNotEnabledInProduction`).
+3. `POST /api/auth/register` — immediate registration: creates User + Business + OWNER/ACTIVE membership atomically and returns a JWT (see contract).
+4. `GET /api/auth/memberships` with `Authorization: Bearer <token>` (no business header needed) returns ACTIVE memberships: `[{ membershipId, businessId, businessName, role, status }]`.
+5. Every business request requires **both** `Authorization: Bearer <token>` and `x-business-id: <Business.id>`.
+6. Middleware verifies the JWT, resolves an ACTIVE membership for the requested business (business must not be soft-deleted), and attaches `req.auth = { userId, businessId, membershipId, role }`.
 
 Phone signup flow (OTP, mounted for later use): `POST /api/auth/register/resend` + `POST /api/auth/register/verify`; see the signup contracts below.
 
@@ -60,6 +63,7 @@ All success responses: `{ ok: true, data, message?, responseText? }`. Errors: `{
 | Method & URL | Auth | Body | Success | Errors |
 |---|---|---|---|---|
 | `POST /api/auth/login` | public, rate limited (10/15min per IP) | `{ identifier: string (email or phone), password: string }` | `200 { ok: true, data: { token, tokenType: "Bearer", expiresAt, expiresIn } }` | `400` identifier/password required; `401` invalid credentials; `429` rate limited |
+| `POST /api/auth/signup` | public, rate limited (5/15min per IP, `prototypeSignupRateLimiter`) | `{ name, email, password, phone? }` | `201 { ok: true, data: PrototypeSignupResult }` (below) | `201` new user; `400` invalid input (bad email/password); `401`; `409` email already registered or prototype mode disabled; `429` rate limited |
 | `POST /api/auth/register` | public, rate limited (5/15min per IP) | `{ name, email, businessName, password, phone? }` | `201 { ok: true, data: RegisterResult }` (below) | `400` duplicate email/phone or invalid input; `429` rate limited |
 | `POST /api/auth/register/resend` | public, rate limited (3/15min per IP) | `{ phone }` | `202 { ok: true, data: { message: string } }` | `400` invalid phone; `429` |
 | `POST /api/auth/register/verify` | public, rate limited (10/15min per IP) | `{ phone, code }` (6-digit) | `200 { ok: true, data: { verified: true } }` | `400` invalid/expired code; `429` |
@@ -89,6 +93,31 @@ Registration rules:
 - Passwords are hashed with the existing scrypt implementation; plaintext is never stored and never returned.
 - Creates User + Business + OWNER/ACTIVE Membership atomically with Prisma `$transaction`; the token uses the same JWT mechanism as login.
 
+`PrototypeSignupResult` (returned by `POST /api/auth/signup`):
+
+```json
+{
+  "ok": true,
+  "data": {
+    "user": { "id": "string", "name": "string", "email": "string", "phone": "string|null", "phoneVerifiedAt": "ISO date|null" },
+    "token": "string (JWT)",
+    "tokenType": "Bearer",
+    "expiresAt": "ISO date",
+    "expiresIn": 3600
+  }
+}
+```
+
+Prototype (MVP) signup rules:
+
+- Requires `PROTOTYPE_SIGNUP_ENABLED=true`; otherwise returns `409` "Prototype signup is not enabled in this environment."
+- Body: `{ name, email, password }` — `phone` is optional. Email is normalized (trim + lowercase) before storage and duplicate checks.
+- Validates with Zod (`prototypeSignupSchema`): `name` (2–100), `email` (valid format), `phone` (optional), `password` (8–128); strict mode rejects unknown fields.
+- Duplicate email → `409` "This email is already registered. Please sign in with your email and password." (unique `User.email` column as defense-in-depth).
+- Passwords hashed with the existing scrypt implementation; plaintext and hashes never returned.
+- Prototype signup leaves `phoneVerifiedAt` null (the phone is unverified). First-business onboarding via `POST /api/businesses` allows users without a verified phone while `PROTOTYPE_SIGNUP_ENABLED=true`; otherwise it returns `403` (phone verification via `POST /api/auth/register/verify` is required).
+- The full phone-verified flow remains available via `POST /api/auth/register/resend` + `POST /api/auth/register/verify` (see the signup contracts below).
+
 ### First business creation
 
 | Method & URL | Auth | Headers | Body | Success | Errors |
@@ -97,7 +126,7 @@ Registration rules:
 
 `CreatedFirstBusiness`: `{ business: { id, name, currency }, membership: { membershipId, businessId, role: "OWNER", status: "ACTIVE" }, replayed: boolean }`.
 
-Notes: requires `user.phoneVerifiedAt` (set by `POST /api/auth/register/verify`); idempotent via the `BusinessCreationRequest` table (`@@unique([userId, idempotencyKey])`) with a Serializable transaction guard.
+Notes: requires `user.phoneVerifiedAt` (set by `POST /api/auth/register/verify`) or an active prototype signup (`PROTOTYPE_SIGNUP_ENABLED`); idempotent via the `BusinessCreationRequest` table (`@@unique([userId, idempotencyKey])`) with a Serializable transaction guard.
 
 ### Dashboard
 

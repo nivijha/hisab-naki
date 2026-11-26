@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-function normalizePhone(value: string) {
+export function normalizePhoneInput(value: string) {
   const trimmed = value.trim();
   const digits = trimmed.replace(/\D/g, '');
   if (/^[6-9]\d{9}$/.test(digits)) return `+91${digits}`;
@@ -9,9 +9,16 @@ function normalizePhone(value: string) {
   return trimmed;
 }
 
-const phoneSchema = z.string().trim().min(1, 'Phone number is required.')
-  .transform(normalizePhone)
+export const phoneSchema = z.string().trim().min(1, 'Phone number is required.')
+  .transform(normalizePhoneInput)
   .refine(value => /^\+[1-9]\d{7,14}$/.test(value), 'Enter a valid phone number with country code or a 10-digit Indian mobile number.');
+
+export const optionalPhoneSchema = z.preprocess((value) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, phoneSchema.optional());
 
 export const registerSchema = z.object({
   name: z.string().trim().min(2, 'Enter your name.').max(100, 'Name must be 100 characters or fewer.'),

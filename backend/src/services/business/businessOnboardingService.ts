@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import prisma from '../../lib/prisma.js';
 import { HttpError } from '../../middleware/authenticate.js';
+import { isPrototypeSignupEnabled } from '../auth/prototypeSignupService.js';
 
 export type CreatedBusiness = {
   business: { id: string; name: string; currency: string };
@@ -43,7 +44,11 @@ export class PrismaBusinessOnboardingRepository implements BusinessOnboardingRep
 
           const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, phoneVerifiedAt: true } });
           if (!user) throw new HttpError(401, 'Authenticated user was not found.');
-          if (!user.phoneVerifiedAt) throw new HttpError(403, 'Verify your phone before creating a shop.');
+          // Prototype signup leaves the phone unverified; allow onboarding for
+          // those users while PROTOTYPE_SIGNUP_ENABLED is on.
+          if (!user.phoneVerifiedAt && !isPrototypeSignupEnabled()) {
+            throw new HttpError(403, 'Verify your phone before creating a shop.');
+          }
           const activeMemberships = await tx.membership.count({ where: { userId, status: 'ACTIVE', business: { is: { deletedAt: null } } } });
           if (activeMemberships > 0) throw new HttpError(409, 'This account already has an active business. Select it or contact support.');
 

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { PrismaClient } from '@prisma/client';
-import { createAuthService, type AuthUserLookup, type EmailOrPhoneRecord } from '../../../services/auth/authService.js';
+import { createAuthService, type AuthUserLookup } from '../../../services/auth/authService.js';
 import { HttpError } from '../../../middleware/authenticate.js';
 import { verifyAccessToken } from '../../../services/auth/tokenService.js';
 import type { RegisterInput } from '../../../services/auth/authService.js';
@@ -55,19 +55,21 @@ function makeClient() {
   return { client, tx };
 }
 
-function makeLookup(duplicate: EmailOrPhoneRecord | null): AuthUserLookup {
+function makeLookup(): AuthUserLookup {
   return {
     findByIdentifier: async () => null,
-    findByEmailOrPhone: async () => duplicate,
   };
 }
 
-function makeService(options: { duplicate?: EmailOrPhoneRecord | null } = {}) {
-  const { client } = makeClient();
+function makeService(options: { createError?: unknown } = {}) {
+  const { client, tx } = makeClient();
+  if (options.createError) {
+    tx.user.create = async () => { throw options.createError; };
+  }
   const hashCalls: string[] = [];
   const service = createAuthService({
     client,
-    userLookup: makeLookup(options.duplicate ?? null),
+    userLookup: makeLookup(),
     hash: async (password: string) => {
       hashCalls.push(password);
       return 'scrypt$16384$8$1$salt$hash';
@@ -127,43 +129,36 @@ describe('authService - register', () => {
     assert.strictEqual(verified.sub, NEW_USER.id);
   });
 
-  it('lowercases the email before duplicate checks', async () => {
-    const lookups: Array<{ email: string; phone: string | null }> = [];
-    const { client } = makeClient();
+  it('normalizes email before creating user', async () => {
+    let createdEmail: unknown;
+    const { client, tx } = makeClient();
+    tx.user.create = async (args) => { createdEmail = args.data.email; return NEW_USER; };
     const service = createAuthService({
       client,
-      userLookup: {
-        findByIdentifier: async () => null,
-        findByEmailOrPhone: async (email, phone) => {
-          lookups.push({ email, phone });
-          return null;
-        },
-      },
+      userLookup: makeLookup(),
       hash: async () => 'hash',
       secret: SECRET,
       expiresInSeconds: 3600,
       now: () => NOW_MS,
     });
 
-    await service.register({ ...makeInput(), email: 'TeSt@ExAmPlE.CoM' });
-    assert.deepStrictEqual(lookups, [{ email: 'test@example.com', phone: null }]);
+    await service.register({ ...makeInput(), email: ' TeSt@ExAmPlE.CoM ' });
+    assert.strictEqual(createdEmail, 'test@example.com');
   });
 
-  it('rejects an already registered email', async () => {
-    const { service } = makeService({
-      duplicate: { id: 'other-user', email: 'test@example.com', phone: null },
-    });
-    await expectHttpError(service.register(makeInput()), 400, /Email address is already registered/);
+  it('rejects an already registered email with field-specific 409 on P2002', async () => {
+    const err = Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['email'] } });
+    const { service } = makeService({ createError: err });
+    await expectHttpError(service.register(makeInput()), 409, /Email.*already registered/i);
   });
 
-  it('rejects an already registered phone number', async () => {
-    const { service } = makeService({
-      duplicate: { id: 'other-user', email: null, phone: '9999999999' },
-    });
+  it('rejects an already registered phone number with field-specific 409 on P2002', async () => {
+    const err = Object.assign(new Error('dup'), { code: 'P2002', meta: { target: ['phone'] } });
+    const { service } = makeService({ createError: err });
     await expectHttpError(
       service.register({ ...makeInput(), phone: '9999999999' }),
-      400,
-      /Phone number is already registered/
+      409,
+      /Phone number is already registered/i
     );
   });
 

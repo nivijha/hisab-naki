@@ -37,7 +37,7 @@ loaded.filename = filename;
 loaded.paths = Module._nodeModulePaths(path.dirname(filename));
 loaded._compile(output, filename);
 Module._load = originalLoad;
-const { registerSignup, resendSignupCode, verifySignupCode, createFirstBusiness } = loaded.exports;
+const { registerSignup, registerPrototypeSignup, resendSignupCode, verifySignupCode, createFirstBusiness } = loaded.exports;
 
 test.beforeEach(() => { calls.length = 0; });
 
@@ -69,4 +69,16 @@ test('creates the first business with bearer-auth scope, exact body, and stable 
   assert.equal(calls[0].scope, 'auth');
   assert.deepEqual(JSON.parse(calls[0].init.body), { name: 'Kirana' });
   assert.equal(new Headers(calls[0].init.headers).get('Idempotency-Key'), 'onboard-test-key-1');
+});
+
+test('prototype signup posts to /api/auth/signup as a public request with the exact body', async () => {
+  nextResponse = { ok: true, data: {
+    user: { id: 'user-1', name: 'Nivi Shopkeeper', email: 'user@example.com', phone: null },
+  } };
+  const result = await registerPrototypeSignup({ name: 'Nivi Shopkeeper', email: 'user@example.com', password: 'a-long-password' });
+  assert.equal(calls[0].url, '/api/auth/signup');
+  assert.equal(calls[0].scope, 'public');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { name: 'Nivi Shopkeeper', email: 'user@example.com', password: 'a-long-password' });
+  assert.equal(result.user.email, 'user@example.com');
+  assert.equal(result.user.phone, null);
 });
