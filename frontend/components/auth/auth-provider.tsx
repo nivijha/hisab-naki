@@ -217,11 +217,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (status !== 'authenticated') return;
-    const token = apiClient.getToken();
-    if (!token) {
-      logout();
-      return;
-    }
     const expiry = tokenExpiry.current;
     if (!expiry) return;
     const timeout = window.setTimeout(() => { logout(); }, Math.max(0, expiry - Date.now()));
