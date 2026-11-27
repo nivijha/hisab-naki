@@ -239,16 +239,16 @@ function TransactionRows({ transactions, customerLedger = false, onViewDetails }
   onViewDetails?: (id: string, opener: HTMLButtonElement) => void;
 }) {
   return (
-    <ul className="space-y-3" role="list">
+    <ul className="divide-y divide-forest/10" role="list">
       {transactions.map(transaction => (
-        <li key={transaction.id} className="flex flex-col items-stretch justify-between gap-2 rounded-lg border border-forest/10 p-3 sm:flex-row sm:items-center">
-          <div className="min-w-0 break-words">
+        <li key={transaction.id} className="flex min-w-0 flex-col items-stretch justify-between gap-3 py-3 first:pt-1 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1 break-words">
             {customerLedger ? (
-              <p className="text-sm font-semibold text-forest">{transaction.description || 'Transaction'}</p>
+              <p className="text-sm font-semibold leading-5 text-forest">{transaction.description || 'Transaction'}</p>
             ) : (
-              <p className="text-sm font-semibold text-forest">{transaction.customer?.name || 'General'}</p>
+              <p className="text-sm font-semibold leading-5 text-forest">{transaction.customer?.name || 'General'}</p>
             )}
-            <p className="text-xs text-muted">
+            <p className="mt-1 text-xs leading-5 text-muted [overflow-wrap:anywhere]">
               {!customerLedger && `${transaction.description || 'Transaction'} • `}
               {formatDate(transaction.createdAt)}
             </p>
@@ -341,7 +341,7 @@ function LedgerSection({ id, title, onClose, children }: { id: string; title: st
     <section
       id={id}
       aria-labelledby={`${id}-title`}
-      className="space-y-3 rounded-lg border border-forest/10 bg-beige-light p-3"
+      className="min-w-0 space-y-3 rounded-[10px] border border-forest/10 bg-white p-3"
       onKeyDown={event => {
         if (event.key !== 'Escape') return;
         event.preventDefault();
@@ -349,8 +349,8 @@ function LedgerSection({ id, title, onClose, children }: { id: string; title: st
         onClose();
       }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-3">
-        <h4 id={`${id}-title`} ref={heading} tabIndex={-1} className="scroll-mt-2 text-base font-semibold text-forest [overflow-wrap:anywhere]">{title}</h4>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <h4 id={`${id}-title`} ref={heading} tabIndex={-1} className="min-w-0 scroll-mt-2 text-base font-semibold text-forest [overflow-wrap:anywhere]">{title}</h4>
         <Button type="button" variant="link" size="sm" aria-label={`Close ${title.toLowerCase()}`} onClick={onClose}>Close</Button>
       </div>
       {children}
@@ -1069,14 +1069,15 @@ export default function DashboardPage() {
           <PanelError panel={transactionPanel} retry={loadTransactions} message={transactionState.message} retained={(historyDataCurrent && Boolean(history)) || summaryTransactions.length > 0} focusTarget={showHistory ? 'transaction-history-title' : 'recent-transactions'} />
         </div>
       )}
-      {showHistory && historyDataCurrent && !invalidActiveHistoryDates && transactionState.status === 'success' && history?.total !== null && history?.total !== undefined && (
-        <p className="text-xs text-muted">Showing {history.transactions.length} entries on this page; {history.total} matching transactions across {history.totalPages ?? 'unknown'} pages.</p>
+      {showHistory && historyDataCurrent && !invalidActiveHistoryDates && transactionState.status === 'success' && history && (
+        <p className="text-xs leading-5 text-muted">
+          {history.total !== null && history.total !== undefined
+            ? `Showing ${history.transactions.length} entries on this page; ${history.total} matching transactions across ${history.totalPages ?? 'unknown'} pages.`
+            : `Showing ${history.transactions.length} entries returned by the API. The response does not include history-completeness metadata.`}
+        </p>
       )}
       {!invalidActiveHistoryDates && (showHistory ? historyDataCurrent ? history?.transactions ?? [] : [] : transactions).length > 0 ? (
         <>
-          {showHistory && history?.total !== null && history?.total !== undefined
-            ? null
-            : showHistory && <p className="text-xs text-muted">Entries returned by the API: {history?.transactions.length ?? 0}. The response does not include history-completeness metadata.</p>}
           {showHistory
             ? <HistoryEntries key={`${historyPage}-${historyType}-${historyCustomerId}-${historyFrom}-${historyTo}`} transactions={history?.transactions ?? []} />
             : <TransactionRows transactions={transactions.slice(0, 5)} />}
@@ -1089,7 +1090,7 @@ export default function DashboardPage() {
         </div>
       )}
       {showHistory && historyDataCurrent && !invalidActiveHistoryDates && history?.totalPages !== null && history?.totalPages !== undefined && history.totalPages > 1 && (
-        <nav aria-label="Transaction history pages" className="flex flex-wrap items-center justify-between gap-3 border-t border-forest/10 pt-3">
+        <nav aria-label="Transaction history pages" className="flex flex-wrap items-center justify-between gap-2 border-t border-forest/10 pt-3">
           <Button type="button" variant="outline" disabled={transactionState.status !== 'success' || historyPage <= 1} onClick={() => setHistoryFiltersState(current => changeTransactionHistoryPage(current, current.page - 1, history.totalPages!))}>Previous</Button>
           <p role="status" className="text-sm text-muted">Page {historyPage} of {history.totalPages}</p>
           <Button type="button" variant="outline" disabled={transactionState.status !== 'success' || historyPage >= history.totalPages} onClick={() => setHistoryFiltersState(current => changeTransactionHistoryPage(current, current.page + 1, history.totalPages!))}>Next</Button>
@@ -1099,11 +1100,11 @@ export default function DashboardPage() {
   );
 
   const historyFilters = showHistory ? (
-    <div className="space-y-3 rounded-md border border-forest/10 bg-beige-light p-3" role="group" aria-label="Transaction filters">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
+    <div className="min-w-0 space-y-3 rounded-[10px] border border-forest/10 bg-beige-light p-3" role="group" aria-label="Transaction filters">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="min-w-0 space-y-1">
           <label htmlFor="history-type" className="text-xs font-medium text-forest">Transaction type</label>
-          <select id="history-type" value={historyType} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { type: event.target.value }))} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+          <select id="history-type" value={historyType} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { type: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
             <option value="">All transactions</option>
             <option value="CREDIT">Credit</option>
             <option value="PAYMENT">Payment</option>
@@ -1111,23 +1112,23 @@ export default function DashboardPage() {
             <option value="EXPENSE">Expense</option>
           </select>
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label htmlFor="history-customer" className="text-xs font-medium text-forest">Customer</label>
           <select id="history-customer" value={historyCustomerId} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { customerId: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
             <option value="">All customers</option>
             {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name} · {customer.id}</option>)}
           </select>
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label htmlFor="history-from" className="text-xs font-medium text-forest">From date</label>
           <input id="history-from" type="date" max={historyTo || undefined} value={historyFrom} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { from: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <label htmlFor="history-to" className="text-xs font-medium text-forest">To date</label>
           <input id="history-to" type="date" min={historyFrom || undefined} value={historyTo} onChange={event => setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { to: event.target.value }))} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-forest/10 pt-2">
         <p className="text-xs text-muted">{historyType || historyCustomerId || historyFrom || historyTo ? 'Filters are applied to the returned transaction history.' : 'No filters applied.'}</p>
         <Button type="button" variant="link" size="sm" className="px-0 underline" disabled={!historyType && !historyCustomerId && !historyFrom && !historyTo} onClick={() => {
             setHistoryFiltersState(current => updateTransactionHistoryFilters(current, { type: '', customerId: '', from: '', to: '' }));
@@ -1137,42 +1138,45 @@ export default function DashboardPage() {
   ) : null;
 
 return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="min-w-0 space-y-6 sm:space-y-8">
       <div className="min-w-0 break-words">
-        <h1 className="text-3xl font-bold text-forest tracking-tight">{selectedBusiness?.businessName || summary?.businessName || 'Dashboard'}</h1>
-        <p className="mt-1 text-sm text-muted">Voice-first digital ledger</p>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted">Daily ledger</p>
+        <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold leading-tight tracking-tight text-forest">{selectedBusiness?.businessName || summary?.businessName || 'Dashboard'}</h1>
+        <p className="mt-1 text-sm leading-6 text-muted">Voice-first digital ledger</p>
       </div>
 
-      <ScrollReveal className="break-words rounded-xl border border-forest/10 bg-white p-5 shadow-soft sm:p-8">
+      <ScrollReveal className="break-words rounded-[14px] border border-forest/10 bg-white px-4 py-5 shadow-card sm:px-6 sm:py-6">
         <div className="text-center">
           <h2 id="voice-input" className="sr-only">Voice input</h2>
 
-          <div className="relative flex flex-col items-center gap-4">
-            <div className={`voice-ring ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`} aria-hidden="true">
-              <div className="voice-ring-inner" />
-            </div>
+          <div className="relative flex flex-col items-center gap-3">
+            <div className="relative h-[80px] w-[80px]">
+              <div aria-hidden="true" className={`voice-ring ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`}>
+                <div className="voice-ring-inner" />
+              </div>
 
-            <Button
-              type="button"
-              onClick={startVoiceCapture}
-              onKeyDown={event => {
-                if (event.key !== 'Escape' || recognitionStartupTimerRef.current === null) return;
-                event.preventDefault();
-                event.stopPropagation();
-                releaseRecognition(true);
-                setVoicePhase('idle');
-                setVoiceFeedback('Microphone startup cancelled. You can try again when ready.');
-              }}
-              disabled={previewBusy || Boolean(voicePreview)}
-              aria-pressed={voicePhase === 'listening'}
-              aria-describedby="voice-feedback"
-              aria-label={voicePhase === 'listening' ? 'Stop listening' : voicePhase === 'starting' ? 'Starting microphone…' : 'Start voice recording'}
-              className={`voice-mic-button ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`}
-            >
-              <span className="mic-motion flex h-full w-full items-center justify-center">
-                <Mic aria-hidden="true" className="h-12 w-12 sm:h-16 sm:w-16" />
-              </span>
-            </Button>
+              <Button
+                type="button"
+                onClick={startVoiceCapture}
+                onKeyDown={event => {
+                  if (event.key !== 'Escape' || recognitionStartupTimerRef.current === null) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  releaseRecognition(true);
+                  setVoicePhase('idle');
+                  setVoiceFeedback('Microphone startup cancelled. You can try again when ready.');
+                }}
+                disabled={previewBusy || Boolean(voicePreview)}
+                aria-pressed={voicePhase === 'listening'}
+                aria-describedby="voice-feedback"
+                aria-label={voicePhase === 'listening' ? 'Stop listening' : voicePhase === 'starting' ? 'Starting microphone…' : 'Start voice recording'}
+                className={`voice-mic-button ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`}
+              >
+                <span className="mic-motion flex h-full w-full items-center justify-center">
+                  <Mic aria-hidden="true" className="h-10 w-10" />
+                </span>
+              </Button>
+            </div>
 
             <div className="voice-status" role="status" aria-live="polite" aria-atomic="true">
               {voicePhase === 'listening' && (
@@ -1233,23 +1237,23 @@ return (
             <p className="mt-1 [overflow-wrap:anywhere] text-sm text-forest">{voiceTranscript}</p>
           </div>}
 
-          <div className="mt-5 rounded-lg border border-forest/10 bg-beige-light p-4 sm:p-5 text-left">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Try saying things like:</p>
+          <div className="mx-auto mt-4 max-w-3xl rounded-[14px] border border-forest/10 bg-beige-light p-3 text-left sm:p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Try saying</p>
             <ul className="mt-2 grid gap-2 sm:grid-cols-2" role="list">
-              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
-                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+              <li className="flex min-h-11 items-center gap-2 rounded-[8px] border border-forest/10 bg-white px-3 py-2 text-sm leading-5 text-forest">
+                <Mic className="h-4 w-4 shrink-0 text-purple" aria-hidden="true" />
                 "Rahul ko 500 rupaye udhaar diye"
               </li>
-              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
-                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+              <li className="flex min-h-11 items-center gap-2 rounded-[8px] border border-forest/10 bg-white px-3 py-2 text-sm leading-5 text-forest">
+                <Mic className="h-4 w-4 shrink-0 text-purple" aria-hidden="true" />
                 "Amit se 200 rupaye mile"
               </li>
-              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
-                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+              <li className="flex min-h-11 items-center gap-2 rounded-[8px] border border-forest/10 bg-white px-3 py-2 text-sm leading-5 text-forest">
+                <Mic className="h-4 w-4 shrink-0 text-purple" aria-hidden="true" />
                 "Suman ka 300 rupaye baaki hai"
               </li>
-              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
-                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+              <li className="flex min-h-11 items-center gap-2 rounded-[8px] border border-forest/10 bg-white px-3 py-2 text-sm leading-5 text-forest">
+                <Mic className="h-4 w-4 shrink-0 text-purple" aria-hidden="true" />
                 "Rajesh ne 1000 rupaye wapas kiye"
               </li>
             </ul>
@@ -1494,25 +1498,25 @@ return (
             <PanelError panel="dashboard summary" retry={loadDashboard} focusTarget="financial-summary" retained={Boolean(summary)} message={summaryState.message} />
           </div>
         )}
-        <ScrollReveal className="grid gap-4 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+        <ScrollReveal className="grid grid-cols-1 gap-3 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {statCards.map((card) => {
             const amount = formatInrAmount(summary?.[card.key]);
             const compactAmount = amount.length > 12;
             return (
-            <Card key={card.key} className="relative overflow-hidden">
-              <CardHeader className="items-center justify-between space-y-0 px-2 pb-2 text-center sm:px-4">
-                <h3 className={`flex min-h-10 items-center text-sm font-medium tracking-tight ${card.key === 'totalOutstanding' ? 'text-forest' : 'text-muted'}`}>
+            <Card key={card.key} className="relative min-w-0 overflow-hidden p-4">
+              <CardHeader className="flex-row items-start justify-between space-y-0 p-0">
+                <h3 className={`min-h-10 max-w-[9rem] text-sm font-medium leading-5 ${card.key === 'totalOutstanding' ? 'text-forest' : 'text-muted'}`}>
                   {card.label}
                 </h3>
-                <div className={`h-9 w-9 rounded-md flex items-center justify-center ${card.color}`}>{card.icon}</div>
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] ${card.color}`}>{card.icon}</div>
               </CardHeader>
-              <CardContent className="px-1 text-center">
+              <CardContent className="mt-3 p-0">
                 {summaryState.status === 'loading' && !summary ? (
-                  <div aria-hidden="true" className="flex h-8 items-center justify-center">
-                    <span className="h-4 w-16 max-w-[80%] rounded-full bg-forest/10" />
+                  <div aria-hidden="true" className="flex h-8 items-center">
+                    <span className="h-4 w-20 max-w-[80%] rounded-full bg-forest/10" />
                   </div>
                 ) : (
-                  <p className={`font-bold leading-8 text-forest [overflow-wrap:anywhere] ${compactAmount ? 'text-[clamp(0.75rem,1.5vw,0.9375rem)]' : 'text-2xl min-[375px]:max-sm:text-[clamp(1rem,4vw,1.25rem)]'}`}>
+                  <p className={`font-bold leading-8 text-forest [overflow-wrap:anywhere] ${compactAmount ? 'text-[clamp(0.8125rem,1.5vw,1rem)]' : 'text-[clamp(1.25rem,2vw,1.5rem)]'} ${card.key === 'totalOutstanding' ? 'border-l-2 border-purple pl-3' : ''}`}>
                     {amount}
                   </p>
                 )}
@@ -1522,18 +1526,18 @@ return (
           })}
         </ScrollReveal>
 
-        <ScrollReveal delay={0.05} className="rounded-xl border border-forest/10 bg-white p-4 sm:p-5 shadow-soft">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-purple/10 flex items-center justify-center">
+        <ScrollReveal delay={0.05} className="rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-purple/10">
                 <List className="h-5 w-5 text-purple" aria-hidden="true" />
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-forest">Quick actions</h3>
-                <p className="text-xs text-muted">Navigate to detailed views</p>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-forest">Quick actions</h3>
+                <p className="mt-0.5 text-xs leading-5 text-muted">Open a detailed ledger or customer view</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 min-[375px]:grid-cols-2 sm:flex sm:flex-wrap">
               <Link
                 href="/transactions"
                 className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-lg border border-forest/20 bg-white text-sm font-medium text-forest hover:bg-beige-light hover:border-forest/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors"
@@ -1559,8 +1563,8 @@ return (
         )}
       </section>
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <ScrollReveal delay={0.1} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+        <ScrollReveal delay={0.1} className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
           <CardHeader className="flex-row items-center justify-between gap-3 px-0 pt-0">
             <CardTitle id="customers" tabIndex={-1} className="text-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest">Customers</CardTitle>
             <Button ref={addCustomerTrigger} type="button" size="sm" className="shrink-0" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={openCreateCustomer}>
@@ -1583,7 +1587,7 @@ return (
               {customerEditor && (
                 <form
                   aria-labelledby="customer-form-title"
-                  className="space-y-3 rounded-lg border border-forest/15 bg-beige-light p-4"
+                  className="min-w-0 space-y-3 rounded-[10px] border border-forest/15 bg-beige-light p-3 sm:p-4"
                   onSubmit={saveCustomer}
                   onKeyDown={event => {
                     if (event.key !== 'Escape' || mutationPending) return;
@@ -1675,26 +1679,27 @@ return (
                   const outstanding = formatInrAmount(customer.outstandingBalance);
                   return (
                     <div key={customer.id} className="space-y-2">
-                      <div className="rounded-lg border border-forest/10 p-3">
-                        <div className="flex items-center justify-between gap-3 mb-1">
+                      <div className="rounded-[10px] border border-forest/10 p-3">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 break-words">
-                            <p className="font-semibold text-forest text-sm">{customer.name}</p>
-                            <p className="text-xs text-muted [overflow-wrap:anywhere]">{customer.phone || 'No phone saved'}</p>
+                            <p className="text-sm font-semibold leading-5 text-forest">{customer.name}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-muted [overflow-wrap:anywhere]">{customer.phone || 'No phone saved'}</p>
                             {duplicate && <p className="text-xs text-muted [overflow-wrap:anywhere]">Customer ID {customer.id}</p>}
                           </div>
                           <span className="shrink-0 whitespace-nowrap rounded-full bg-purple/10 px-2.5 py-0.5 text-xs font-semibold text-forest">
                             {customer.transactionCount} txns
                           </span>
                         </div>
-                        <div className="flex flex-wrap items-baseline gap-x-1">
+                        <div className="mt-3 flex flex-wrap items-baseline gap-x-1">
                           <span className={`min-w-0 max-w-full font-bold text-forest [overflow-wrap:anywhere] ${outstanding.length > 12 ? 'text-[clamp(0.75rem,3.5vw,1.125rem)]' : 'text-lg'}`}>{outstanding}</span>
                           <span className="text-xs text-muted">outstanding</span>
                         </div>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-forest/10 pt-2">
                           <Button
                           type="button"
-                          variant="link"
+                          variant="outline"
                           size="sm"
-                          className="px-0 underline"
+                          className="min-w-[105px]"
                           aria-label={`View ledger for ${customer.name}${customer.phone ? `, ${customer.phone}` : ''}${duplicate ? `, customer ID ${customer.id}` : ''}`}
                           aria-expanded={isOpen}
                           aria-controls={isOpen ? `customer-ledger-${customer.id}` : undefined}
@@ -1709,10 +1714,11 @@ return (
                         >
                           View ledger
                         </Button>
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
                             <Button type="button" variant="link" size="sm" className="px-0 underline" aria-label={`Edit ${customer.name}${duplicate ? `, customer ID ${customer.id}` : ''}`} disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => openEditCustomer(customer, event.currentTarget)}>Edit</Button>
                             <Button type="button" variant="link" size="sm" className="px-0 underline" aria-label={`Delete ${customer.name}${customer.phone ? `, ${customer.phone}` : ''}, customer ID ${customer.id}`} disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => openDeleteConfirmation(customer, event.currentTarget)}>Delete</Button>
                           </div>
+                        </div>
                       </div>
                       {isOpen && <CustomerLedgerDetails key={`${customer.id}-${ledgerRevision}`} customerId={customer.id} onClose={closeLedger} />}
                     </div>
@@ -1730,7 +1736,7 @@ return (
           </CardContent>
         </ScrollReveal>
 
-        <ScrollReveal delay={0.2} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
+        <ScrollReveal delay={0.2} className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
           <CardHeader className="px-0 pt-0">
             <div className="flex flex-wrap items-center justify-between gap-x-3">
               <div className="flex items-center gap-3">
@@ -1766,7 +1772,7 @@ return (
           <CardContent className="px-0 pb-0">
             <div className="space-y-3">
               {manualEntryOpen && (
-                <section id="manual-entry" aria-labelledby={manualReview ? 'manual-entry-review-title' : 'manual-entry-title'} className="space-y-3 rounded-lg border border-forest/15 bg-beige-light p-4" onKeyDown={event => {
+                <section id="manual-entry" aria-labelledby={manualReview ? 'manual-entry-review-title' : 'manual-entry-title'} className="min-w-0 space-y-3 rounded-[10px] border border-forest/15 bg-beige-light p-3 sm:p-4" onKeyDown={event => {
                   if (event.key !== 'Escape') return;
                   event.preventDefault();
                   event.stopPropagation();
@@ -1776,32 +1782,34 @@ return (
                     <form onSubmit={openManualReview} className="space-y-3">
                       <div>
                         <h3 id="manual-entry-title" className="font-semibold text-forest">Prepare a manual entry</h3>
-                        <p className="mt-1 text-sm text-muted">Review the details only. This form does not record or submit a financial transaction.</p>
+                        <p className="mt-1 text-xs leading-5 text-muted">This form prepares a review. It does not directly record or submit a financial transaction.</p>
                       </div>
-                      <div className="space-y-1">
+                      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="manual-transaction-type" className="text-sm font-medium text-forest">Transaction type</label>
-                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
                           <option value="CREDIT">Credit</option>
                           <option value="PAYMENT">Payment</option>
                           <option value="SALE">Sale</option>
                           <option value="EXPENSE">Expense</option>
                         </select>
                       </div>
-                      <div className="space-y-1">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="manual-customer" className="text-sm font-medium text-forest">Customer {manualType === 'CREDIT' || manualType === 'PAYMENT' ? <span aria-hidden="true">*</span> : <span className="font-normal text-muted">(optional)</span>}</label>
-                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
+                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
                           <option value="">{customerState.status === 'loading' ? 'Loading customers…' : customers.length ? 'Select a customer' : 'No customers available'}</option>
                           {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name} · {customer.id}</option>)}
                         </select>
                       </div>
-                      <div className="space-y-1">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="manual-amount" className="text-sm font-medium text-forest">Amount (₹)</label>
-                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                         <p id="manual-amount-guidance" className="text-xs text-muted">Positive amount; up to two decimal places. No rounding is applied in this review.</p>
                       </div>
-                      <div className="space-y-1">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="manual-description" className="text-sm font-medium text-forest">Description <span className="font-normal text-muted">(optional)</span></label>
-                        <textarea id="manual-description" rows={2} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <textarea id="manual-description" rows={2} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full min-w-0 resize-y rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                      </div>
                       </div>
                       {manualError && <p role="alert" className="text-sm text-forest-dark">{manualError}</p>}
                       <div className="flex flex-wrap gap-2">

@@ -367,13 +367,13 @@ export default function CustomersPage() {
 
   return (
     <DashboardAccessBoundary>
-      <div className="space-y-6 sm:space-y-8">
+      <div className="mx-auto w-full max-w-[1200px] min-w-0 space-y-5 px-4 py-6 sm:space-y-7 sm:px-6 sm:py-8">
         <div className="min-w-0 break-words">
           <h1 className="text-3xl font-bold text-forest tracking-tight">Customers</h1>
           <p className="mt-1 text-sm text-muted">Manage customers for {selectedBusiness?.businessName}</p>
         </div>
 
-        <ScrollReveal className="rounded-xl border border-forest/10 bg-white p-5 shadow-soft sm:p-8">
+        <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
           <CardHeader className="flex-row items-center justify-between gap-3 px-0 pt-0">
             <CardTitle tabIndex={-1} className="text-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest">All customers</CardTitle>
             <Button ref={addCustomerTrigger} type="button" size="sm" className="shrink-0" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={openCreateCustomer}>

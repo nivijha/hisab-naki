@@ -214,20 +214,20 @@ export default function CustomerDetailPage() {
 
   return (
     <DashboardAccessBoundary>
-      <div className="space-y-6 sm:space-y-8">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto w-full max-w-[1200px] min-w-0 space-y-5 px-4 py-6 sm:space-y-7 sm:px-6 sm:py-8">
+        <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-4">
           <Link
             href={backHref}
-            className="flex min-h-11 w-fit items-center gap-2 text-sm font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+            className="inline-flex min-h-11 max-w-full shrink-0 items-center gap-2 text-sm font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
             aria-label="Back to customers"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Back to customers
           </Link>
-          <h1 className="text-2xl font-bold text-forest tracking-tight">{ledger?.name || 'Customer'}</h1>
+          <h1 className="min-w-0 break-words text-[clamp(1.5rem,4vw,2rem)] font-bold leading-tight tracking-tight text-forest">{ledger?.name || 'Customer'}</h1>
         </div>
 
-        <ScrollReveal className="grid gap-4 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+        <ScrollReveal className="grid min-w-0 grid-cols-1 gap-3 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           <Card>
             <CardHeader className="items-center justify-between space-y-0 px-2 pb-2 text-center sm:px-4">
               <h3 className="flex min-h-10 items-center text-sm font-medium tracking-tight text-muted">Outstanding balance</h3>

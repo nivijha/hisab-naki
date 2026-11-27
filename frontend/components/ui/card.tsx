@@ -8,7 +8,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(({ className, ..
   <div
     ref={ref}
     className={[
-      'rounded-lg border border-forest/10 bg-white shadow-soft',
+      'rounded-[14px] border border-forest/10 bg-white shadow-card',
       className,
     ]
       .filter(Boolean)
