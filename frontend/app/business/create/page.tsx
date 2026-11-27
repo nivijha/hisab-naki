@@ -16,6 +16,8 @@ export default function BusinessCreatePage() {
     refreshMemberships,
     selectBusiness,
     memberships,
+    membershipsStatus,
+    membershipsError,
   } = useAuth();
 
   const [businessName, setBusinessName] = useState('');
@@ -105,6 +107,10 @@ export default function BusinessCreatePage() {
     router.push('/business/select');
   };
 
+  const hasActiveBusiness = memberships.length > 0;
+  const isLoading = status === 'loading' || membershipsStatus === 'loading';
+  const isError = membershipsStatus === 'error';
+
   return (
     <main className="min-h-screen bg-beige px-5 py-10 text-forest sm:grid sm:place-items-center sm:py-16">
       <div className="mx-auto w-full max-w-2xl">
@@ -134,17 +140,46 @@ export default function BusinessCreatePage() {
             </div>
           </div>
 
-          {feedback && (
-            <p
-              id="create-feedback"
-              className="mt-5 rounded-md border border-forest/15 bg-beige p-3 text-sm leading-5 text-forest"
-              role={feedbackIsError ? 'alert' : 'status'}
-            >
-              {feedback}
-            </p>
+          {isLoading && (
+            <div className="mt-6 rounded-lg border border-forest/10 bg-beige p-5 text-center" role="status" aria-live="polite">
+              <p className="text-sm text-forest">Checking your businesses…</p>
+            </div>
           )}
 
-          {createdBusiness ? (
+          {isError && !hasActiveBusiness && (
+            <div className="mt-6 rounded-lg border border-forest/15 bg-beige p-5" role="alert">
+              <p className="text-sm text-forest">Could not load your businesses. {membershipsError || 'Please try again.'}</p>
+              <Button type="button" className="mt-4 w-full sm:w-auto" onClick={() => router.refresh()}>
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {hasActiveBusiness && !isLoading && (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-lg border border-forest/10 bg-white p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-forest/10 shrink-0">
+                    <svg className="h-5 w-5 text-forest" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-forest">You already have a business</h2>
+                    <p className="mt-1 text-sm text-muted">Your account is linked to <span className="font-medium">{memberships[0].businessName}</span>. The current system only supports creating your first business during initial setup.</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-muted">To manage multiple businesses, please contact support or use your existing business.</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={handleBackToSelection}>
+                  Back to business selection
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {createdBusiness && !hasActiveBusiness && !isLoading && (
             <div className="mt-6 space-y-4">
               <p className="text-sm text-forest">Business created successfully. Redirecting to dashboard…</p>
               <Button type="button" className="w-full sm:w-auto" onClick={() => router.replace('/dashboard')}>
@@ -154,7 +189,9 @@ export default function BusinessCreatePage() {
                 Back to business list
               </Button>
             </div>
-          ) : showErrorState ? (
+          )}
+
+          {showErrorState && !hasActiveBusiness && !createdBusiness && !isLoading && (
             <div className="mt-6 space-y-4">
               <div className="rounded-lg border border-forest/15 bg-beige p-5">
                 <h2 className="text-lg font-semibold text-forest">Unable to create business</h2>
@@ -167,7 +204,9 @@ export default function BusinessCreatePage() {
                 </Button>
               </div>
             </div>
-          ) : (
+          )}
+
+          {!hasActiveBusiness && !createdBusiness && !showErrorState && !isLoading && !isError && (
             <form className="mt-6 space-y-6" onSubmit={handleSubmit} noValidate>
               <div>
                 <label htmlFor="business-name" className="mb-1.5 block text-sm font-medium">Business name <span className="text-forest" aria-hidden="true">*</span></label>

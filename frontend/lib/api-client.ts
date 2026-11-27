@@ -51,8 +51,9 @@ class ApiClient {
     this.sessionVersion += 1;
   }
 
-  setSession(_token?: string) {
+  setSession(token?: string) {
     this.markSessionChanged();
+    if (token) this.token = token;
   }
 
   clearSession() {

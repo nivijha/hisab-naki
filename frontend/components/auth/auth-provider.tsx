@@ -76,32 +76,6 @@ function parseSessionResponse(value: unknown): SessionResponse {
   };
 }
 
-type LoginResponse = {
-  token: string;
-  tokenType: string;
-  expiresAt: string;
-  expiresIn: number;
-};
-
-function parseLoginResponse(value: unknown): LoginResponse {
-  if (!isRecord(value) || value.ok !== true || !isRecord(value.data)) {
-    throw new ApiError('The server returned an invalid login response.', 'invalid-response');
-  }
-  const data = value.data;
-  if (typeof data.token !== 'string' || !data.token.trim()
-    || typeof data.tokenType !== 'string' || !data.tokenType.trim()
-    || typeof data.expiresAt !== 'string' || !data.expiresAt.trim()
-    || typeof data.expiresIn !== 'number' || data.expiresIn <= 0) {
-    throw new ApiError('The server returned an invalid login response.', 'invalid-response');
-  }
-  return {
-    token: data.token,
-    tokenType: data.tokenType,
-    expiresAt: data.expiresAt,
-    expiresIn: data.expiresIn,
-  };
-}
-
 function membershipErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 403) return 'You are not allowed to view these business memberships.';
@@ -137,7 +111,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const businessGenerationRef = useRef(0);
   const [financialOperationStatus, setFinancialOperationStatus] = useState<FinancialOperationStatus>('idle');
   const financialOperationRef = useRef<FinancialOperationStatus>('idle');
-  const tokenExpiry = useRef<number | null>(null);
 
   const updateStatus = useCallback((next: AuthStatus) => {
     statusRef.current = next;
@@ -215,14 +188,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [handleBusinessForbidden, logout, updateStatus]);
 
-  useEffect(() => {
-    if (status !== 'authenticated') return;
-    const expiry = tokenExpiry.current;
-    if (!expiry) return;
-    const timeout = window.setTimeout(() => { logout(); }, Math.max(0, expiry - Date.now()));
-    return () => window.clearTimeout(timeout);
-  }, [logout, status]);
-
   const refreshMemberships = useCallback((force = false) => {
     if (statusRef.current !== 'authenticated') {
       return Promise.reject(new ApiError('Please sign in to view businesses.', 'http', 401));
@@ -290,7 +255,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [restoreSession]);
 
   const completeAuthenticatedSession = useCallback(async () => {
-    apiClient.clearSession();
     setMemberships([]);
     updateMembershipStatus('idle');
     setMembershipsError(null);
