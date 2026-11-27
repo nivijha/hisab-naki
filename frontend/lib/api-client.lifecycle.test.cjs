@@ -128,8 +128,10 @@ test('current-session HTTP 401 invokes logout even with an invalid JSON error bo
   requests[0].resolve(new Response('Not JSON', { status: 401 }));
   await pending;
   assert.equal(apiClient.getToken(), null);
-  await assert.rejects(apiClient.requestJson(summary), isError('http', 401));
-  assert.equal(requests.length, 1);
+  const pending2 = assert.rejects(apiClient.requestJson(memberships, {}, 'auth'), isError('http', 401));
+  requests[1].resolve(new Response('Not JSON', { status: 401 }));
+  await pending2;
+  assert.equal(requests.length, 2);
 });
 
 test('logout retires pending authenticated reads without waiting for a transport response', async () => {

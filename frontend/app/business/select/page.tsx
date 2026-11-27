@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mic } from 'lucide-react';
+import { Mic, Plus } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api-client';
-import { createFirstBusiness, createIdempotencyKey, FIRST_BUSINESS_OPERATION_PREFIX } from '@/lib/signup-api';
+import { createFirstBusiness, createIdempotencyKey, FIRST_BUSINESS_OPERATION_PREFIX, currentSessionSubject } from '@/lib/signup-api';
 
 type PendingBusinessOperation = { name: string; key: string };
 
@@ -52,6 +52,7 @@ export default function BusinessSelectionPage() {
     logout,
     financialOperationStatus,
     user,
+    getToken,
   } = useAuth();
   const router = useRouter();
   const [selectionError, setSelectionError] = useState('');
@@ -64,6 +65,7 @@ export default function BusinessSelectionPage() {
   const [pendingOperation, setPendingOperation] = useState<PendingBusinessOperation | null>(null);
   const [createdBusinessName, setCreatedBusinessName] = useState('');
   const creationLock = useRef(false);
+  const refreshListPending = useRef(false);
   const sessionSubject = currentSessionSubject(getToken());
   const operationStorageKey = sessionSubject ? `${FIRST_BUSINESS_OPERATION_PREFIX}${encodeURIComponent(sessionSubject)}` : null;
 
@@ -228,23 +230,38 @@ export default function BusinessSelectionPage() {
               )}
             </div>
           ) : (
-            <ul className="mt-6 space-y-3" aria-label="Active business memberships">
-              {memberships.map(membership => {
-                const isSelected = selectedBusiness?.businessId === membership.businessId;
-                return (
-                  <li key={membership.membershipId} className="flex flex-col gap-4 rounded-lg border border-forest/15 bg-beige p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                    <div className="min-w-0">
-                      <h2 className="break-words text-base font-semibold text-forest">{membership.businessName}</h2>
-                      <p className="mt-1 text-sm text-muted">Your role: {roleLabel(membership.role)}</p>
-                      {isSelected && <p className="mt-1 text-xs font-medium text-forest">Currently selected</p>}
-                    </div>
-                    <Button type="button" className="w-full shrink-0 sm:w-auto" onClick={() => chooseBusiness(membership.businessId)}>
-                      {isSelected ? 'Open this business' : 'Select business'}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              <ul className="mt-6 space-y-3" aria-label="Active business memberships">
+                {memberships.map(membership => {
+                  const isSelected = selectedBusiness?.businessId === membership.businessId;
+                  return (
+                    <li key={membership.membershipId} className="flex flex-col gap-4 rounded-lg border border-forest/15 bg-beige p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                      <div className="min-w-0">
+                        <h2 className="break-words text-base font-semibold text-forest">{membership.businessName}</h2>
+                        <p className="mt-1 text-sm text-muted">Your role: {roleLabel(membership.role)}</p>
+                        {isSelected && <p className="mt-1 text-xs font-medium text-forest">Currently selected</p>}
+                      </div>
+                      <Button type="button" className="w-full shrink-0 sm:w-auto" onClick={() => chooseBusiness(membership.businessId)}>
+                        {isSelected ? 'Open this business' : 'Select business'}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <Link
+                href="/business/create"
+                className="mt-6 flex group w-full items-center justify-center gap-3 rounded-lg border border-forest/20 bg-white p-5 text-left transition-colors duration-200 hover:bg-beige-light hover:border-forest/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-purple/10 text-purple group-hover:bg-purple/20 transition-colors shrink-0">
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="text-left">
+                  <h3 className="font-semibold text-forest">Add a new business</h3>
+                  <p className="mt-1 text-sm text-muted">Create another shop to manage separately</p>
+                </div>
+              </Link>
+            </>
           )}
         </section>
 

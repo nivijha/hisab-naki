@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Building2 } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-provider';
+import { AccountDropdown } from '@/components/auth/account-dropdown';
 
 export function DashboardHeaderActions() {
   const { beginBusinessSwitch, selectedBusiness, status } = useAuth();
@@ -32,6 +33,7 @@ export function DashboardHeaderActions() {
       <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige">
         Back to site
       </Link>
+      <AccountDropdown />
       {message && (
         <div role="alert" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-md border border-forest/15 bg-beige-light p-3 text-xs leading-5 text-forest shadow-lg">
           <p>{message}</p>

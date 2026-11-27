@@ -3,9 +3,9 @@
 import { useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Mic } from 'lucide-react';
+import { Eye, EyeOff, Mic, User, Mail, Smartphone, Lock, Shield } from 'lucide-react';
 import { ApiError } from '@/lib/api-client';
-import { registerPrototypeSignup } from '@/lib/signup-api';
+import { registerPrototypeSignup, PENDING_SIGNUP_PHONE_KEY } from '@/lib/signup-api';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 
@@ -28,6 +28,31 @@ function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value);
 }
 
+function InputWithIcon({
+  icon: Icon,
+  iconAlt,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & { icon: React.ElementType; iconAlt: string }) {
+  return (
+    <div className="relative">
+      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-forest/50" aria-hidden="true">
+        <Icon className="h-5 w-5" />
+      </div>
+      <input
+        {...props}
+        className={`
+          min-h-11 w-full rounded-md border bg-white px-10 pl-10 py-2 text-base text-forest
+          placeholder:text-muted
+          focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest
+          transition-colors duration-150
+          ${props['aria-invalid'] ? 'border-forest/60' : 'border-forest/20'}
+          ${props.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        `}
+      />
+    </div>
+  );
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const { completeAuthenticatedSession } = useAuth();
@@ -40,7 +65,33 @@ export default function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [continuePhone, setContinuePhone] = useState('');
+  const [invalidField, setInvalidField] = useState<'signup-name' | 'signup-email' | 'signup-phone' | 'signup-password' | 'signup-confirm-password' | ''>('');
   const submitLock = useRef(false);
+
+  const validateField = (field: typeof invalidField, value: string): boolean => {
+    switch (field) {
+      case 'signup-name':
+        return value.trim().length >= 2;
+      case 'signup-email':
+        return isValidEmail(value.trim());
+      case 'signup-phone':
+        return value.trim().length >= 10;
+      case 'signup-password':
+        return value.length >= 8 && value.length <= 128;
+      case 'signup-confirm-password':
+        return value === password;
+      default:
+        return true;
+    }
+  };
+
+  const handleBlur = (field: typeof invalidField, value: string) => {
+    if (value && !validateField(field, value)) {
+      setInvalidField(field);
+    } else if (invalidField === field) {
+      setInvalidField('');
+    }
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -50,10 +101,19 @@ export default function SignupPage() {
     const normalizedPhone = phone.trim();
     if (normalizedName.length < 2 || !normalizedPhone || password.length < 8 || password.length > 128) {
       setFeedback('Enter your name, a valid phone number, and a password between 8 and 128 characters.');
+      if (!normalizedName) setInvalidField('signup-name');
+      else if (!normalizedPhone) setInvalidField('signup-phone');
+      else setInvalidField('signup-password');
       return;
     }
     if (password !== confirmPassword) {
       setFeedback('The passwords do not match.');
+      setInvalidField('signup-confirm-password');
+      return;
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      setFeedback('Enter a valid email address.');
+      setInvalidField('signup-email');
       return;
     }
 
@@ -82,60 +142,201 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="min-h-screen bg-beige px-5 py-10 text-forest sm:grid sm:place-items-center sm:py-12">
+    <main className="min-h-screen bg-beige px-5 py-10 text-forest sm:grid sm:place-items-center sm:py-16">
       <div className="mx-auto w-full max-w-md">
-        <Link href="/" className="mx-auto flex min-h-11 w-fit items-center gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest" aria-label="HisabNaki home">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-purple"><Mic aria-hidden="true" className="h-5 w-5" /></span>
-          <span className="text-xl font-bold tracking-tight">HisabNaki</span>
+        <Link
+          href="/"
+          className="mx-auto flex min-h-12 w-fit items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest"
+          aria-label="HisabNaki home"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple">
+            <Mic aria-hidden="true" className="h-6 w-6 text-forest" />
+          </span>
+          <span className="text-xl font-bold tracking-tight text-forest">HisabNaki</span>
         </Link>
 
-        <section className="mt-8 rounded-xl border border-forest/10 bg-beige-light p-5 shadow-sm sm:p-8" aria-labelledby="signup-heading">
-          <h1 id="signup-heading" className="text-2xl font-semibold tracking-tight">Create your account</h1>
-          <p className="mt-2 text-sm leading-6 text-muted">Enter your name, email, and a password to get started.</p>
+        <section className="mt-10 rounded-xl border border-forest/10 bg-white p-6 shadow-soft sm:p-8" aria-labelledby="signup-heading">
+          <div className="text-center mb-8">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-forest/10">
+              <User className="h-7 w-7 text-forest" aria-hidden="true" />
+            </div>
+            <h1 id="signup-heading" className="text-2xl font-semibold tracking-tight text-forest">Create your account</h1>
+            <p className="mt-2 text-sm leading-6 text-muted">Enter your name, email, and a password to get started.</p>
+          </div>
 
-          <form className="mt-6 space-y-4" aria-labelledby="signup-heading" onSubmit={submit} noValidate>
+          <form className="space-y-5" aria-labelledby="signup-heading" onSubmit={submit} noValidate>
             <div>
-              <label htmlFor="signup-name" className="mb-1.5 block text-sm font-medium">Full name</label>
-              <input id="signup-name" name="name" autoComplete="name" required maxLength={100} value={name} onChange={event => setName(event.target.value)} aria-invalid={invalidField === 'signup-name' || undefined} aria-describedby={invalidField === 'signup-name' ? 'signup-feedback' : undefined} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+              <label htmlFor="signup-name" className="mb-2 block text-sm font-medium text-forest">
+                Full name
+              </label>
+              <InputWithIcon
+                id="signup-name"
+                name="name"
+                autoComplete="name"
+                icon={User}
+                iconAlt="Name"
+                required
+                maxLength={100}
+                value={name}
+                onChange={event => setName(event.target.value)}
+                onBlur={event => handleBlur('signup-name', event.target.value)}
+                aria-invalid={invalidField === 'signup-name' || undefined}
+                aria-describedby={invalidField === 'signup-name' ? 'signup-feedback' : undefined}
+                disabled={submitting}
+              />
             </div>
+
             <div>
-              <label htmlFor="signup-email" className="mb-1.5 block text-sm font-medium">Email address</label>
-              <input id="signup-email" name="email" type="email" inputMode="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="user@example.com" aria-describedby="signup-email-help" />
-              <p id="signup-email-help" className="mt-1 text-xs leading-5 text-muted">We will use this email to sign you in later.</p>
+              <label htmlFor="signup-email" className="mb-2 block text-sm font-medium text-forest">
+                Email address
+              </label>
+              <InputWithIcon
+                id="signup-email"
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                icon={Mail}
+                iconAlt="Email"
+                required
+                value={email}
+                onChange={event => setEmail(event.target.value)}
+                onBlur={event => handleBlur('signup-email', event.target.value)}
+                placeholder="user@example.com"
+                aria-describedby="signup-email-help"
+                aria-invalid={invalidField === 'signup-email' || undefined}
+                disabled={submitting}
+              />
+              <p id="signup-email-help" className="mt-1.5 text-xs leading-5 text-muted">We will use this email to sign you in later.</p>
             </div>
+
             <div>
-              <label htmlFor="signup-phone" className="mb-1.5 block text-sm font-medium">Phone number</label>
-              <input id="signup-phone" name="tel" type="tel" inputMode="tel" autoComplete="tel" required value={phone} onChange={event => setPhone(event.target.value)} className="min-h-11 w-full rounded-md border border-forest/20 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" placeholder="10-digit Indian mobile number" aria-describedby="signup-phone-help" />
-              <p id="signup-phone-help" className="mt-1 text-xs leading-5 text-muted">Use an Indian mobile number or include the country code.</p>
+              <label htmlFor="signup-phone" className="mb-2 block text-sm font-medium text-forest">
+                Phone number
+              </label>
+              <InputWithIcon
+                id="signup-phone"
+                name="tel"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                icon={Smartphone}
+                iconAlt="Phone"
+                required
+                value={phone}
+                onChange={event => setPhone(event.target.value)}
+                onBlur={event => handleBlur('signup-phone', event.target.value)}
+                placeholder="10-digit Indian mobile number"
+                aria-describedby="signup-phone-help"
+                aria-invalid={invalidField === 'signup-phone' || undefined}
+                disabled={submitting}
+              />
+              <p id="signup-phone-help" className="mt-1.5 text-xs leading-5 text-muted">Use an Indian mobile number or include the country code.</p>
             </div>
+
             <div>
-              <label htmlFor="signup-password" className="mb-1.5 block text-sm font-medium">Password</label>
+              <label htmlFor="signup-password" className="mb-2 block text-sm font-medium text-forest">
+                Password
+              </label>
               <div className="relative">
-                <input id="signup-password" name="new-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} aria-invalid={invalidField === 'signup-password' || undefined} className="min-h-11 w-full rounded-md border border-forest/60 bg-white py-2 pl-3 pr-12 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" aria-describedby={invalidField === 'signup-password' ? 'password-help signup-feedback' : 'password-help'} />
-                <button type="button" className="absolute inset-y-0 right-0 inline-flex min-h-11 min-w-11 items-center justify-center rounded-r-md text-forest hover:bg-beige focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-forest" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
+                <InputWithIcon
+                  id="signup-password"
+                  name="new-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  icon={Lock}
+                  iconAlt="Password"
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  value={password}
+                  onChange={event => setPassword(event.target.value)}
+                  onBlur={event => handleBlur('signup-password', event.target.value)}
+                  aria-invalid={invalidField === 'signup-password' || undefined}
+                  aria-describedby={invalidField === 'signup-password' ? 'password-help signup-feedback' : 'password-help'}
+                  disabled={submitting}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 flex min-h-11 min-w-11 items-center justify-center pr-3 text-forest/60 hover:text-forest focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-forest rounded-r-md transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword(value => !value)}
+                >
                   {showPassword ? <EyeOff aria-hidden="true" className="h-5 w-5" /> : <Eye aria-hidden="true" className="h-5 w-5" />}
                 </button>
               </div>
-              <p id="password-help" className="mt-1 text-xs leading-5 text-muted">Use 8 to 128 characters.</p>
-            </div>
-            <div>
-              <label htmlFor="signup-confirm-password" className="mb-1.5 block text-sm font-medium">Confirm password</label>
-              <input id="signup-confirm-password" name="confirm-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} aria-invalid={invalidField === 'signup-confirm-password' || undefined} aria-describedby={invalidField === 'signup-confirm-password' ? 'signup-feedback' : undefined} className="min-h-11 w-full rounded-md border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+              <p id="password-help" className="mt-1.5 text-xs leading-5 text-muted">Use 8 to 128 characters.</p>
             </div>
 
-            {feedback && <p role="alert" className="rounded-md border border-forest/15 bg-beige p-3 text-sm leading-5 text-forest">{feedback}</p>}
-            {continuePhone && <Link href="/signup/verify" className="block min-h-11 rounded-md px-1 py-3 text-sm font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" onClick={() => { try { window.sessionStorage.setItem(PENDING_SIGNUP_PHONE_KEY, continuePhone); } catch { /* Verification page allows phone entry if storage is restricted. */ } }}>Continue to phone verification</Link>}
+            <div>
+              <label htmlFor="signup-confirm-password" className="mb-2 block text-sm font-medium text-forest">
+                Confirm password
+              </label>
+              <InputWithIcon
+                id="signup-confirm-password"
+                name="confirm-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                icon={Shield}
+                iconAlt="Confirm"
+                required
+                value={confirmPassword}
+                onChange={event => setConfirmPassword(event.target.value)}
+                onBlur={event => handleBlur('signup-confirm-password', event.target.value)}
+                aria-invalid={invalidField === 'signup-confirm-password' || undefined}
+                aria-describedby={invalidField === 'signup-confirm-password' ? 'signup-feedback' : undefined}
+                disabled={submitting}
+              />
+            </div>
+
+            {feedback && (
+              <p
+                id="signup-feedback"
+                role="alert"
+                className={`
+                  rounded-md border p-3 text-sm leading-5
+                  ${invalidField
+                    ? 'border-forest/30 bg-red-50 text-red-800'
+                    : 'border-forest/15 bg-beige-light text-forest'}
+                `}
+              >
+                {feedback}
+              </p>
+            )}
+
+            {continuePhone && (
+              <Link
+                href="/signup/verify"
+                className="block min-h-11 w-full rounded-md bg-forest/5 px-4 py-2.5 text-center text-sm font-medium text-forest hover:bg-forest/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors"
+                onClick={() => {
+                  try { window.sessionStorage.setItem(PENDING_SIGNUP_PHONE_KEY, continuePhone); }
+                  catch { /* Verification page allows phone entry if storage is restricted. */ }
+                }}
+              >
+                Continue to phone verification
+              </Link>
+            )}
 
             <Button type="submit" disabled={submitting} className="w-full" aria-busy={submitting}>
               {submitting ? 'Creating your account…' : 'Create account'}
             </Button>
           </form>
 
-          <p className="mt-5 text-center text-sm text-muted">
-            Already have an account? <Link href="/login" className="font-medium text-forest underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Sign in</Link>
+          <p className="mt-6 text-center text-sm text-muted">
+            Already have an account?{' '}
+            <Link href="/login" className="font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors">
+              Sign in
+            </Link>
           </p>
         </section>
-        <Link href="/" className="mx-auto mt-5 flex min-h-11 w-fit items-center px-2 text-sm font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Back to site</Link>
+
+        <Link
+          href="/"
+          className="mx-auto mt-6 flex min-h-11 w-fit items-center px-2 text-sm font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors"
+        >
+          Back to site
+        </Link>
       </div>
     </main>
   );

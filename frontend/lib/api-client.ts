@@ -31,6 +31,7 @@ class ApiClient {
   private businessId: string | null = null;
   private sessionVersion = 0;
   private businessVersion = 0;
+  private token: string | null = null;
   private activeRequests = new Set<AbortController>();
   private activeBusinessRequests = new Set<AbortController>();
   private onUnauthorized: (() => void) | null = null;
@@ -52,7 +53,14 @@ class ApiClient {
   }
 
   clearSession() {
-    this.markSessionChanged();
+    this.sessionVersion += 1;
+    this.cancelAuthenticatedRequests();
+    this.clearBusinessContext();
+    this.token = null;
+  }
+
+  getToken(): string | null {
+    return this.token;
   }
 
   setBusinessContext(businessId: string) {

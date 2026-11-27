@@ -29,7 +29,7 @@ test.afterEach(() => {
 });
 
 test('scopes transaction reads with the current bearer and selected-business headers', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   globalThis.fetch = async (_input, init) => {
     const headers = new Headers(init.headers);
@@ -48,13 +48,13 @@ test('refuses transaction reads until authenticated business context exists', as
     return new Response(JSON.stringify({ ok: true, data: [] }), { status: 200 });
   };
   await assert.rejects(apiClient.requestJson('/api/transactions?page=1&limit=10'), error => error instanceof ApiError && error.status === 403);
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   await assert.rejects(apiClient.requestJson('/api/transactions?page=1&limit=10'), error => error instanceof ApiError && error.status === 403);
   assert.equal(called, false);
 });
 
 test('rejects and cancels a history response after business context changes', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   let resolveResponse;
   let requestSignal;
@@ -72,7 +72,7 @@ test('rejects and cancels a history response after business context changes', as
 });
 
 test('rejects an old request after logout even if the response arrives late', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   let resolveResponse;
   globalThis.fetch = () => new Promise(resolve => { resolveResponse = resolve; });

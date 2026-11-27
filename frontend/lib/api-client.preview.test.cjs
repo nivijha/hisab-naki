@@ -24,7 +24,7 @@ test.afterEach(() => {
 });
 
 test('creates a transcript preview with bearer and selected-business headers', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url).endsWith('/api/preview'), true);
@@ -46,13 +46,13 @@ test('refuses preview requests when authentication or business context is absent
   let called = false;
   globalThis.fetch = async () => { called = true; return new Response('{}'); };
   await assert.rejects(apiClient.requestJson('/api/preview', { method: 'POST' }, 'business'), error => error instanceof ApiError && error.status === 403);
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   await assert.rejects(apiClient.requestJson('/api/preview', { method: 'POST' }, 'business'), error => error instanceof ApiError && error.status === 403);
   assert.equal(called, false);
 });
 
 test('cancels a pending preview request when business context changes', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   let resolveResponse;
   let signal;
@@ -69,7 +69,7 @@ test('cancels a pending preview request when business context changes', async ()
 });
 
 test('cancels a pending preview request on logout and rejects its late response', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   let resolveResponse;
   let signal;
@@ -86,7 +86,7 @@ test('cancels a pending preview request on logout and rejects its late response'
 });
 
 test('maps expired previews without retrying confirmation', async () => {
-  apiClient.markSessionChanged();
+  apiClient.clearSession();
   apiClient.setBusinessContext('business-alpha');
   const requests = [];
   globalThis.fetch = async (url, init) => {

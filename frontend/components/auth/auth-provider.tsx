@@ -25,9 +25,11 @@ type SessionResponse = {
 
 type AuthContextValue = {
   status: AuthStatus;
-  login: (identifier: string, password: string) => Promise<void>;
-  logout: () => boolean;
+  user: AuthUser | null;
+  login: (identifier: string, password: string, signal?: AbortSignal) => Promise<void>;
+  logout: () => Promise<boolean>;
   getToken: () => string | null;
+  completeAuthenticatedSession: () => Promise<void>;
   memberships: BusinessMembership[];
   membershipsStatus: MembershipLoadStatus;
   membershipsError: string | null;
@@ -37,6 +39,7 @@ type AuthContextValue = {
   businessContextGeneration: number;
   selectBusiness: (businessId: string) => boolean;
   beginBusinessSwitch: () => { ok: true } | { ok: false; message: string };
+  clearSelectedBusiness: () => void;
   financialOperationStatus: FinancialOperationStatus;
   setFinancialOperationStatus: (status: FinancialOperationStatus) => void;
 };
@@ -70,6 +73,32 @@ function parseSessionResponse(value: unknown): SessionResponse {
       phone: user.phone,
       phoneVerifiedAt: user.phoneVerifiedAt,
     },
+  };
+}
+
+type LoginResponse = {
+  token: string;
+  tokenType: string;
+  expiresAt: string;
+  expiresIn: number;
+};
+
+function parseLoginResponse(value: unknown): LoginResponse {
+  if (!isRecord(value) || value.ok !== true || !isRecord(value.data)) {
+    throw new ApiError('The server returned an invalid login response.', 'invalid-response');
+  }
+  const data = value.data;
+  if (typeof data.token !== 'string' || !data.token.trim()
+    || typeof data.tokenType !== 'string' || !data.tokenType.trim()
+    || typeof data.expiresAt !== 'string' || !data.expiresAt.trim()
+    || typeof data.expiresIn !== 'number' || data.expiresIn <= 0) {
+    throw new ApiError('The server returned an invalid login response.', 'invalid-response');
+  }
+  return {
+    token: data.token,
+    tokenType: data.tokenType,
+    expiresAt: data.expiresAt,
+    expiresIn: data.expiresIn,
   };
 }
 
@@ -108,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const businessGenerationRef = useRef(0);
   const [financialOperationStatus, setFinancialOperationStatus] = useState<FinancialOperationStatus>('idle');
   const financialOperationRef = useRef<FinancialOperationStatus>('idle');
+  const tokenExpiry = useRef<number | null>(null);
 
   const updateStatus = useCallback((next: AuthStatus) => {
     statusRef.current = next;
@@ -125,6 +155,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     businessGenerationRef.current += 1;
     setBusinessContextGeneration(businessGenerationRef.current);
   }, []);
+
+  const clearSelectedBusiness = useCallback(() => {
+    clearBusiness();
+  }, [clearBusiness]);
 
   const handleBusinessForbidden = useCallback(() => {
     clearBusiness();
@@ -190,44 +224,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const expiry = tokenExpiry.current;
     if (!expiry) return;
-    const timeout = window.setTimeout(() => { logout(true); }, Math.max(0, expiry - Date.now()));
+    const timeout = window.setTimeout(() => { logout(); }, Math.max(0, expiry - Date.now()));
     return () => window.clearTimeout(timeout);
   }, [logout, status]);
-
-  const login = useCallback(async (identifier: string, password: string) => {
-    loginController.current?.abort();
-    const controller = new AbortController();
-    loginController.current = controller;
-    const attempt = ++loginAttempt.current;
-
-    try {
-      const raw = await apiClient.login(identifier, password, controller.signal);
-      if (attempt !== loginAttempt.current || controller.signal.aborted) {
-        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
-      }
-      const response = parseLoginResponse(raw);
-      const expiration = Date.parse(response.expiresAt);
-      if (expiration <= Date.now()) throw new ApiError('The sign-in session has expired. Please try again.', 'invalid-response');
-
-      sessionGeneration.current += 1;
-      clearBusiness();
-      setMemberships([]);
-      updateMembershipStatus('idle');
-      setMembershipsError(null);
-      setBusinessAccessError(null);
-      updateFinancialOperationStatus('idle');
-      tokenExpiry.current = expiration;
-      apiClient.setSession(response.token);
-      updateStatus('authenticated');
-    } catch (error) {
-      if (attempt !== loginAttempt.current || controller.signal.aborted) {
-        throw new ApiError('This sign-in attempt was cancelled. Please try again.', 'aborted');
-      }
-      throw error;
-    } finally {
-      if (loginController.current === controller) loginController.current = null;
-    }
-  }, [clearBusiness, updateFinancialOperationStatus, updateMembershipStatus, updateStatus]);
 
   const refreshMemberships = useCallback((force = false) => {
     if (statusRef.current !== 'authenticated') {
@@ -296,21 +295,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [restoreSession]);
 
   const completeAuthenticatedSession = useCallback(async () => {
-    apiClient.markSessionChanged();
-    clearBusiness();
+    apiClient.clearSession();
     setMemberships([]);
     updateMembershipStatus('idle');
     setMembershipsError(null);
     setBusinessAccessError(null);
     updateFinancialOperationStatus('idle');
     await restoreSession();
-  }, [clearBusiness, restoreSession, updateFinancialOperationStatus, updateMembershipStatus]);
+  }, [restoreSession, updateFinancialOperationStatus, updateMembershipStatus]);
 
-  const login = useCallback(async (identifier: string, password: string) => {
-    loginController.current?.abort();
+  const login = useCallback(async (identifier: string, password: string, externalSignal?: AbortSignal) => {
     const controller = new AbortController();
+    loginController.current?.abort();
     loginController.current = controller;
     const attempt = ++loginAttempt.current;
+
+    const abortHandler = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) abortHandler();
+    else externalSignal?.addEventListener('abort', abortHandler, { once: true });
 
     try {
       await apiClient.login(identifier, password, controller.signal);
@@ -324,6 +326,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     } finally {
+      externalSignal?.removeEventListener('abort', abortHandler);
       if (loginController.current === controller) loginController.current = null;
     }
   }, [completeAuthenticatedSession]);
@@ -365,6 +368,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     completeAuthenticatedSession,
     logout,
+    getToken: () => apiClient.getToken(),
     memberships,
     membershipsStatus,
     membershipsError,
@@ -374,12 +378,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     businessContextGeneration,
     selectBusiness,
     beginBusinessSwitch,
+    clearSelectedBusiness,
     financialOperationStatus,
     setFinancialOperationStatus: updateFinancialOperationStatus,
   }), [
     beginBusinessSwitch,
     businessAccessError,
     businessContextGeneration,
+    clearSelectedBusiness,
     completeAuthenticatedSession,
     financialOperationStatus,
     login,
