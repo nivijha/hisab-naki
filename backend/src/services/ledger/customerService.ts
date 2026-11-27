@@ -45,6 +45,44 @@ export function createCustomerService(repository: CustomerRepository) {
     });
   }
 
+  async function resolveCustomerForVoice(businessId: string, customerName: string) {
+    const normalizedName = customerName.trim();
+    if (!normalizedName) {
+      return { status: 'missing_name' as const, matches: [] as Array<{ id: string; name: string; phone: string | null }> };
+    }
+
+    const candidates = await repository.findCandidatesByName(businessId, normalizedName);
+    const lower = normalizedName.toLowerCase();
+    const exact = candidates.filter((c) => c.name.trim().toLowerCase() === lower);
+    const matches = (exact.length > 0 ? exact : candidates).map((c) => ({ id: c.id, name: c.name, phone: c.phone ?? null }));
+
+    if (matches.length === 1) return { status: 'matched' as const, match: matches[0], matches };
+    if (matches.length > 1) return { status: 'ambiguous' as const, matches };
+    return { status: 'unknown' as const, matches: [] as Array<{ id: string; name: string; phone: string | null }> };
+  }
+
+  async function createCustomerForVoice(
+    businessId: string,
+    createdByUserId: string,
+    customerName: string
+  ) {
+    const normalizedName = customerName.trim();
+    if (!normalizedName) {
+      return { ok: false as const, code: 'INVALID_NAME' as const, message: 'Customer name is required.' };
+    }
+
+    const result = await repository.createIfNotExistsByName({
+      businessId,
+      createdByUserId,
+      name: normalizedName,
+    });
+
+    if (result.status === 'EXACT_MATCH') {
+      return { ok: true as const, customer: result.customer, created: false };
+    }
+    return { ok: true as const, customer: result.customer, created: true };
+  }
+
   async function updateCustomer(
     businessId: string,
     customerId: string,
@@ -169,6 +207,8 @@ export function createCustomerService(repository: CustomerRepository) {
     getCustomerById,
     getCustomerByName,
     getCustomerTransactions,
+    resolveCustomerForVoice,
+    createCustomerForVoice,
   };
 }
 
@@ -209,4 +249,16 @@ export async function getCustomerByName(businessId: string, customerName: string
 
 export async function getCustomerTransactions(businessId: string, customerId: string) {
   return defaultService.getCustomerTransactions(businessId, customerId);
+}
+
+export async function resolveCustomerForVoice(businessId: string, customerName: string) {
+  return defaultService.resolveCustomerForVoice(businessId, customerName);
+}
+
+export async function createCustomerForVoice(
+  businessId: string,
+  createdByUserId: string,
+  customerName: string
+) {
+  return defaultService.createCustomerForVoice(businessId, createdByUserId, customerName);
 }

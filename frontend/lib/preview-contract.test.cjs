@@ -24,7 +24,9 @@ const { normalizeTransactionPreview, isSupportedPreviewWrite } = loadTypeScript(
 
 const base = {
   id: 'preview-1', businessId: 'business-alpha', intent: 'ADD_CREDIT', customerName: 'Raju',
+  customerId: 'cust-1',
   amount: 450.5, type: 'CREDIT', description: 'Goods', confidence: 0.9, missingFields: [],
+  customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] },
   readyForConfirmation: true, state: 'pending', createdAt: '2026-11-22T10:00:00.000Z',
 };
 
@@ -43,7 +45,15 @@ test('formats voice paise without modifying the parsed amount', () => {
 
 test('accepts explicit mocked repayment, sale, and expense preview types', () => {
   for (const [intent, type] of [['RECORD_PAYMENT', 'PAYMENT'], ['ADD_SALE', 'SALE'], ['ADD_EXPENSE', 'EXPENSE']]) {
-    const preview = normalizeTransactionPreview({ ...base, intent, type }, 'business-alpha');
+    const needsCustomer = intent === 'RECORD_PAYMENT';
+    const preview = normalizeTransactionPreview({
+      ...base,
+      intent,
+      type,
+      ...(needsCustomer
+        ? { customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] } }
+        : { customerResolution: { status: 'not_required', candidates: [] } }),
+    }, 'business-alpha');
     assert.ok(preview);
     assert.equal(preview.type, type);
     assert.equal(isSupportedPreviewWrite(preview), true);
@@ -68,6 +78,7 @@ test('rejects malformed, unsafe, and cross-business preview data', () => {
   assert.equal(normalizeTransactionPreview({ ...base, type: 'UNKNOWN' }, 'business-alpha'), null);
   assert.equal(normalizeTransactionPreview({ ...base, intent: 'RECORD_PAYMENT', type: 'CREDIT' }, 'business-alpha'), null);
   assert.equal(normalizeTransactionPreview({ ...base, readyForConfirmation: true, customerName: undefined }, 'business-alpha'), null);
+  assert.equal(normalizeTransactionPreview({ ...base, readyForConfirmation: true, customerId: undefined }, 'business-alpha'), null);
   assert.equal(normalizeTransactionPreview(base, 'business-beta'), null);
 });
 

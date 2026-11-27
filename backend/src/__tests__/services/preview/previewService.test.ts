@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import type { Customer } from '@prisma/client';
 import { HttpError } from '../../../middleware/authenticate.js';
 import { interpretTranscript } from '../../../services/ai/intentService.js';
 import {
@@ -14,6 +15,23 @@ import type { ParsedIntent } from '../../../services/ai/intentService.js';
 
 const CONTEXT: PreviewTenantContext = { businessId: 'biz-1', createdByUserId: 'user-1' };
 const OTHER_CONTEXT: PreviewTenantContext = { businessId: 'biz-2', createdByUserId: 'user-2' };
+const CREATED_AT = new Date('2026-01-01T00:00:00.000Z');
+
+function makeCustomer(overrides: Partial<Customer> = {}): Customer {
+  return {
+    id: 'cust-new',
+    businessId: CONTEXT.businessId,
+    name: 'Raju',
+    phone: null,
+    email: null,
+    notes: null,
+    createdByUserId: CONTEXT.createdByUserId,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    deletedAt: null,
+    ...overrides,
+  };
+}
 
 function makeParsed(overrides: Partial<ParsedIntent> = {}): ParsedIntent {
   return {
@@ -37,7 +55,9 @@ describe('preview service', () => {
   });
 
   it('2. a valid preview can be generated', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const service = createPreviewService(new InMemoryPreviewStore(), {
+      resolveCustomerForVoice: async () => ({ status: 'matched', match: { id: 'cust-1', name: 'Raju', phone: null }, matches: [{ id: 'cust-1', name: 'Raju', phone: null }] }),
+    });
     const preview = await service.createPreviewFromTranscript(
       'Raju ko 500 rupaye udhaar diya.',
       CONTEXT
@@ -45,10 +65,12 @@ describe('preview service', () => {
 
     assert.strictEqual(preview.intent, 'ADD_CREDIT');
     assert.strictEqual(preview.customerName, 'Raju');
+    assert.strictEqual(preview.customerId, 'cust-1');
     assert.strictEqual(preview.amount, 500);
     assert.strictEqual(preview.type, 'CREDIT');
     assert.strictEqual(preview.confidence, 0.9);
     assert.strictEqual(preview.state, 'pending');
+    assert.strictEqual(preview.customerResolution?.status, 'matched');
     assert.strictEqual(preview.readyForConfirmation, true);
     assert.deepStrictEqual(preview.missingFields, []);
     assert.strictEqual(preview.businessId, CONTEXT.businessId);
@@ -105,9 +127,70 @@ describe('preview service', () => {
     assert.strictEqual(commitCalls, 0);
   });
 
-  it('6. valid confirmation invokes the existing transaction service exactly once', async () => {
+  it('unknown customer blocks confirmation and requires explicit creation', async () => {
+    const service = createPreviewService(new InMemoryPreviewStore(), {
+      resolveCustomerForVoice: async () => ({ status: 'unknown', matches: [] }),
+    });
+    const preview = await service.createPreviewFromTranscript('Raju ko 500 udhaar diya', CONTEXT);
+    assert.strictEqual(preview.customerResolution?.status, 'unknown');
+    assert.strictEqual(preview.readyForConfirmation, false);
+    let commitCalls = 0;
+    const result = await service.confirmPreview(preview.id, async () => { commitCalls += 1; return {}; }, CONTEXT);
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) assert.strictEqual(result.code, 'MISSING_FIELDS');
+    assert.strictEqual(commitCalls, 0);
+  });
+
+  it('ambiguous customer requires selection before confirmation', async () => {
+    const service = createPreviewService(new InMemoryPreviewStore(), {
+      resolveCustomerForVoice: async () => ({ status: 'ambiguous', matches: [{ id: 'c1', name: 'Raju', phone: null }, { id: 'c2', name: 'Raju Kumar', phone: null }] }),
+    });
+    const preview = await service.createPreviewFromTranscript('Raju ko 500 udhaar diya', CONTEXT);
+    assert.strictEqual(preview.customerResolution?.status, 'ambiguous');
+    let commitCalls = 0;
+    const blocked = await service.confirmPreview(preview.id, async () => { commitCalls += 1; return {}; }, CONTEXT);
+    assert.strictEqual(blocked.ok, false);
+    assert.strictEqual(commitCalls, 0);
+
+    const resolved = await service.resolveCustomerForPreview(preview.id, CONTEXT, 'c2');
+    assert.strictEqual(resolved.ok, true);
+    if (resolved.ok) {
+      assert.strictEqual(resolved.preview.customerId, 'c2');
+      assert.strictEqual(resolved.preview.readyForConfirmation, true);
+    }
+  });
+
+  it('explicit customer creation does not commit financial transaction and revalidates preview', async () => {
+    const service = createPreviewService(new InMemoryPreviewStore(), {
+      resolveCustomerForVoice: async () => ({ status: 'unknown', matches: [] }),
+      createCustomerForVoice: async () => ({ ok: true, customer: makeCustomer({ id: 'cust-new', name: 'Raju' }), created: true }),
+    });
+    const preview = await service.createPreviewFromTranscript('Raju ko 500 udhaar diya', CONTEXT);
+    let commitCalls = 0;
+    const created = await service.createCustomerForPreview(preview.id, CONTEXT);
+    assert.strictEqual(created.ok, true);
+    assert.strictEqual(commitCalls, 0);
+    if (created.ok) {
+      assert.strictEqual(created.preview.customerResolution?.status, 'created');
+      assert.strictEqual(created.preview.customerId, 'cust-new');
+      assert.strictEqual(created.preview.readyForConfirmation, true);
+      assert.strictEqual(created.preview.state, 'pending');
+    }
+  });
+
+  it('ADD_CUSTOMER intent requires explicit approval and never confirms as financial tx', async () => {
     const service = createPreviewService(new InMemoryPreviewStore());
+    const preview = service.createPreview(makeParsed({ intent: 'ADD_CUSTOMER', amount: undefined, missingFields: [], customerName: 'Rahul' }), CONTEXT);
+    const result = await service.confirmPreview(preview.id, async () => ({}), CONTEXT);
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) assert.strictEqual(result.code, 'READ_ONLY_INTENT');
+  });
+
+  it('6. valid confirmation invokes the existing transaction service exactly once', async () => {
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const calls: CreateTransactionInput[] = [];
     const committer: TransactionCommitter = async (input) => { calls.push(input); return { committed: true }; };
 
@@ -118,6 +201,7 @@ describe('preview service', () => {
     assert.deepStrictEqual(calls[0], {
       businessId: CONTEXT.businessId,
       createdByUserId: CONTEXT.createdByUserId,
+      customerId: 'cust-1',
       customerName: 'Raju',
       amount: 500,
       type: 'CREDIT',
@@ -127,8 +211,10 @@ describe('preview service', () => {
   });
 
   it('7. duplicate confirmation is rejected', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     let commitCalls = 0;
     const committer: TransactionCommitter = async () => { commitCalls += 1; return {}; };
     const first = await service.confirmPreview(preview.id, committer, CONTEXT);
@@ -163,6 +249,7 @@ describe('preview service', () => {
     assert.strictEqual(commitCalls, 0);
   });
 
+
   it('buildPreview maps all write intents to transaction types', () => {
     const cases: Array<[ParsedIntent['intent'], string]> = [
       ['ADD_CREDIT', 'CREDIT'],
@@ -173,13 +260,16 @@ describe('preview service', () => {
     for (const [intent, expectedType] of cases) {
       const preview = buildPreview(makeParsed({ intent }), CONTEXT);
       assert.strictEqual(preview.type, expectedType);
-      assert.strictEqual(preview.readyForConfirmation, true);
+      // Customer identity must be resolved before any financial confirmation.
+      assert.strictEqual(preview.readyForConfirmation, false);
     }
   });
 
   it('confirming does not accept arbitrary client details (only preview id plus tenant context)', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed({ amount: 500 }), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const calls: CreateTransactionInput[] = [];
     const committer: TransactionCommitter = async (input) => { calls.push(input); return {}; };
     await service.confirmPreview(preview.id, committer, CONTEXT);
@@ -187,6 +277,7 @@ describe('preview service', () => {
     assert.strictEqual(calls[0].amount, 500, 'committed amount must come from the preview');
     assert.strictEqual(calls[0].businessId, CONTEXT.businessId);
     assert.strictEqual(calls[0].createdByUserId, CONTEXT.createdByUserId);
+    assert.strictEqual(calls[0].customerId, 'cust-1');
   });
 });
 
@@ -259,8 +350,10 @@ describe('preview service - tenant context', () => {
   });
 
   it('confirmation passes stored businessId and createdByUserId separately', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const calls: CreateTransactionInput[] = [];
     const committer: TransactionCommitter = async (input) => { calls.push(input); return {}; };
 
@@ -319,8 +412,10 @@ describe('preview service - tenant context', () => {
   });
 
   it('matching context confirms successfully', async () => {
-    const service = createPreviewService(new InMemoryPreviewStore());
+    const store = new InMemoryPreviewStore();
+    const service = createPreviewService(store);
     const preview = service.createPreview(makeParsed(), CONTEXT);
+    store.save({ ...preview, customerId: 'cust-1', customerResolution: { status: 'matched', requestedName: 'Raju', customerId: 'cust-1', customerName: 'Raju', candidates: [{ id: 'cust-1', name: 'Raju', phone: null }] }, missingFields: [], readyForConfirmation: true });
     const committer: TransactionCommitter = async () => ({ ok: true });
 
     const result = await service.confirmPreview(preview.id, committer, CONTEXT);

@@ -4,6 +4,7 @@ export type ParsedIntent = {
     | 'RECORD_PAYMENT'
     | 'ADD_SALE'
     | 'ADD_EXPENSE'
+    | 'ADD_CUSTOMER'
     | 'GET_BALANCE'
     | 'GET_TOTAL_OUTSTANDING'
     | 'GET_TODAY_TRANSACTIONS'
@@ -56,6 +57,14 @@ const PAYMENT_CUES = [
 ];
 const SALE_CUES = ['sale', 'sold', 'sell', 'bech', 'bik', 'bill', 'invoice', 'बिक्री', 'बेचा', 'बेची', 'बिका', 'बिल'];
 const EXPENSE_CUES = ['kharcha', 'expense', 'spent', 'spend', 'cost', 'purchase', 'buy', 'bought', 'खर्चा', 'खर्च', 'खरीदा', 'खरीदी'];
+const CUSTOMER_CUES = ['customer', 'grahak', 'ग्राहक', 'कस्टमर'];
+const ADD_CUSTOMER_CUES = [
+  'new customer', 'add customer', 'create customer', 'customer add', 'customer create',
+  'naya grahak', 'naya customer', 'grahak jodo', 'grahak banao', 'grahak bana', 'grahak jod',
+  'customer jodo', 'customer banao', 'customer bana',
+  'नया ग्राहक', 'नए ग्राहक', 'ग्राहक जोड़ो', 'ग्राहक जोड़', 'ग्राहक बनाओ', 'ग्राहक बनाना', 'ग्राहक बनाएं', 'ग्राहक बनाइए',
+  'कस्टमर जोड़ो', 'कस्टमर बनाओ', 'नया कस्टमर',
+];
 const BALANCE_CUES = ['balance', 'baki', 'baaki', 'outstanding', 'due', 'kitna', 'kitne', 'hisaab', 'hisab', 'account', 'बकाया', 'बाकी', 'हिसाब', 'कितना', 'कितने', 'बैलेंस'];
 const TOTAL_OUTSTANDING_CUES = ['total outstanding', 'total baki', 'total baaki', 'sab baki', 'sab ka baki', 'sab ka outstanding', 'kul baki', 'kul udhaar', 'कुल बकाया', 'कुल बाकी', 'सबका बकाया', 'सब का बकाया', 'सब बकाया'];
 const TODAY_CUES = ['today', 'aaj', 'aaj ke', 'aaj ki', 'आज', 'आज के', 'आज की'];
@@ -210,15 +219,38 @@ function extractNameFromPatterns(original: string): string | undefined {
   return undefined;
 }
 
+function extractCustomerNameForAddCustomer(text: string): string | undefined {
+  const normalized = normalizeDevanagariDigits(String(text ?? '')).replace(/\s+/g, ' ').trim();
+  const actionWords = new Set(['जोड़ो', 'जोड़', 'बनाओ', 'बनाना', 'बनाएं', 'बनाइए', 'बना', 'add', 'create']);
+  const patterns: RegExp[] = [
+    /([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)\s+नाम\s+का\s+(?:नया\s+)?(?:ग्राहक|कस्टमर)(?=\s|$)/u,
+    /(?:नया|नए)\s+(?:ग्राहक|कस्टमर)\s+([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?=\s+(?:जोड़ो|जोड़|बनाओ|बनाना|बनाएं|बनाइए|बना)|$)/u,
+    /(?:add|create)\s+(?:a\s+)?(?:new\s+)?customer\s+(?:named\s+)?([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?=$|\s)/iu,
+    /(?:new)\s+customer\s+(?:named\s+)?([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?=$|\s)/iu,
+    /(?:ग्राहक|कस्टमर)\s+([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s'.-]{1,60}?)(?=\s+(?:जोड़ो|जोड़|बनाओ|बनाना|बनाएं|बनाइए|बना)|$)/u,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    const candidate = match?.[1]?.trim();
+    if (!candidate) continue;
+    const cleaned = normalizeName(candidate.split(/\s+/).map(cleanNameToken).filter(Boolean).join(' ')).replace(/[.]+$/g, '').trim();
+    if (!cleaned || looksLikeCommandPhrase(cleaned)) continue;
+    if (actionWords.has(cleaned.toLowerCase()) || actionWords.has(candidate.toLowerCase())) continue;
+    return cleaned;
+  }
+  return undefined;
+}
+
 function extractCustomerName(text: string, intent: ParsedIntent['intent']): string | undefined {
   if (intent === 'GET_TOTAL_OUTSTANDING' || intent === 'GET_TODAY_TRANSACTIONS') return undefined;
+  if (intent === 'ADD_CUSTOMER') return extractCustomerNameForAddCustomer(text) ?? extractNameFromPatterns(text);
   const patterned = extractNameFromPatterns(text);
   if (patterned) return patterned;
 
   const withoutAmounts = stripAmountAndCurrency(text);
   const scrubbed = withoutAmounts
-    .replace(/\b(?:udhaar|udhar|credit|payment|paid|sale|kharcha|expense|balance|baki|baaki|outstanding|due|total|today|aaj|kal|transaction|transactions|history|ledger|customer|add|record|get|show|dikhao|dikha|batao|bataye|kitna|kitne|ka|ki|ke|ko|se|ne|par|liye|liya|lena|dena|de|do|diya|diye|tha|thi|the|hai|hain|ho|hoga|hogaya|gaya|gaye|huye|hui|amount|for|to|from|and|me|mein|main|kya)\b/gi, ' ')
-    .replace(/(?:उधार|क्रेडिट|भुगतान|जमा|बिक्री|खर्चा|खर्च|बकाया|बाकी|हिसाब|कुल|आज|लेनदेन|ट्रांजैक्शन|ग्राहक|दिखाओ|बताओ|कितना|कितने|का|की|के|को|से|ने|पर|लिया|लिए|देना|दिए|दिया|दे|दो|है|हैं|था|थी|थे|हो|गया|गए|हुए|हुई|में|मैं|सामान|माल)\s*/g, ' ')
+    .replace(/\b(?:udhaar|udhar|credit|payment|paid|sale|kharcha|expense|balance|baki|baaki|outstanding|due|total|today|aaj|kal|transaction|transactions|history|ledger|customer|add|record|get|show|dikhao|dikha|batao|bataye|kitna|kitne|ka|ki|ke|ko|se|ne|par|liye|liya|lena|dena|de|do|diya|diye|tha|thi|the|hai|hain|ho|hoga|hogaya|gaya|gaye|huye|hui|amount|for|to|from|and|me|mein|main|kya|new|create|named|jodo|banao|bana)\b/gi, ' ')
+    .replace(/(?:उधार|क्रेडिट|भुगतान|जमा|बिक्री|खर्चा|खर्च|बकाया|बाकी|हिसाब|कुल|आज|लेनदेन|ट्रांजैक्शन|ग्राहक|कस्टमर|दिखाओ|बताओ|कितना|कितने|का|की|के|को|से|ने|पर|लिया|लिए|देना|दिए|दिया|दे|दो|है|हैं|था|थी|थे|हो|गया|गए|हुए|हुई|में|मैं|सामान|माल|नया|नए|जोड़ो|जोड़|बनाओ|बनाना|बनाएं|बनाइए|बना)\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const tokens = scrubbed.split(/\s+/).map(cleanNameToken).filter(isLikelyNameToken);
@@ -240,6 +272,8 @@ function inferIntent(text: string, amount: number | null): { intent: ParsedInten
   const hasCreditCue = includesAny(lower, CREDIT_CUES) || /उधार/.test(text);
   const hasSaleCue = includesAny(lower, SALE_CUES);
   const hasExpenseCue = includesAny(lower, EXPENSE_CUES);
+  const hasCustomerCue = includesAny(lower, CUSTOMER_CUES);
+  const hasAddCustomerCue = includesAny(lower, ADD_CUSTOMER_CUES) || (/\b(add|create|new)\b/i.test(lower) && hasCustomerCue) || (/(?:जोड़|बना|नया|नए)/.test(text) && hasCustomerCue);
   const isQuestion = /\b(kitna|kitne|kitni|kya|kaun|kab|how much|how many|what|show|batao|bataye)\b/i.test(lower) || /[?]|(?:कितना|कितने|कितनी|क्या|कौन|कब|बताओ|बताइए|दिखाओ)/.test(text);
 
   const creditAction = /\b(udhaar\s+(?:diya|diye|do|dena|de)|udhar\s+(?:diya|diye|do|dena|de)|credit\s+do|khata\s+kholo|khaata\s+kholo|lene\s+hain|lene\s+hai)\b/i.test(lower) || /उधार\s*(?:दिया|दिए|दो|देना|दे|लिखो|चढ़ा|खोलो)/.test(text);
@@ -249,8 +283,10 @@ function inferIntent(text: string, amount: number | null): { intent: ParsedInten
   const isCredit = hasCreditCue || creditAction;
   const isSale = hasSaleCue;
   const isExpense = hasExpenseCue;
-  const hasWriteCue = isPayment || isCredit || isSale || isExpense;
+  const isAddCustomer = hasAddCustomerCue && !isQuestion && amount === null;
+  const hasWriteCue = isPayment || isCredit || isSale || isExpense || isAddCustomer;
 
+  if (isAddCustomer) return { intent: 'ADD_CUSTOMER', isFallback: false, ambiguous: false };
   if (isTotalOutstanding) return { intent: 'GET_TOTAL_OUTSTANDING', isFallback: false, ambiguous: false };
   if (isToday && isTxnList) return { intent: 'GET_TODAY_TRANSACTIONS', isFallback: false, ambiguous: false };
   if (isTxnList && !hasWriteCue) return { intent: 'GET_CUSTOMER_TRANSACTIONS', isFallback: false, ambiguous: false };
@@ -332,7 +368,7 @@ export async function interpretTranscript(rawTranscript: string): Promise<Parsed
   const readIntentsNeedingCustomer = ['GET_BALANCE', 'GET_CUSTOMER_TRANSACTIONS'];
   const writeIntents = ['ADD_CREDIT', 'RECORD_PAYMENT', 'ADD_SALE', 'ADD_EXPENSE'];
 
-  const customerNameRequired = readIntentsNeedingCustomer.includes(intent) || writeIntents.includes(intent);
+  const customerNameRequired = readIntentsNeedingCustomer.includes(intent) || writeIntents.includes(intent) || intent === 'ADD_CUSTOMER';
   const amountRequired = writeIntents.includes(intent);
   const missingFields = [
     ambiguous ? 'intent' : null,
@@ -342,6 +378,7 @@ export async function interpretTranscript(rawTranscript: string): Promise<Parsed
 
   let confidence: number;
   if (isFallback || ambiguous) confidence = 0;
+  else if (intent === 'ADD_CUSTOMER') confidence = customerName ? 0.9 : 0.5;
   else if (readIntentsNotNeedingCustomer.includes(intent)) confidence = 0.9;
   else if (readIntentsNeedingCustomer.includes(intent)) confidence = customerName ? 0.9 : 0.5;
   else if (customerName && amount !== null) confidence = 0.9;

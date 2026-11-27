@@ -45,11 +45,14 @@ class ApiClient {
     this.onBusinessForbidden = handler;
   }
 
-  setSession(token: string) {
-    this.cancelAuthenticatedRequests();
+  markSessionChanged() {
+    this.cancelAuthenticatedRequests('session-changed');
     this.clearBusinessContext();
     this.sessionVersion += 1;
-    this.token = token;
+  }
+
+  setSession(_token?: string) {
+    this.markSessionChanged();
   }
 
   clearSession() {
@@ -66,22 +69,22 @@ class ApiClient {
   setBusinessContext(businessId: string) {
     this.businessVersion += 1;
     this.businessId = businessId;
-    this.cancelBusinessRequests();
+    this.cancelBusinessRequests('business-changed');
   }
 
   clearBusinessContext() {
     this.businessVersion += 1;
     this.businessId = null;
-    this.cancelBusinessRequests();
+    this.cancelBusinessRequests('business-changed');
   }
 
-  private cancelAuthenticatedRequests() {
-    this.activeRequests.forEach(controller => controller.abort());
+  private cancelAuthenticatedRequests(reason: 'session-changed' | 'aborted' = 'aborted') {
+    this.activeRequests.forEach(controller => controller.abort(reason === 'session-changed' ? new DOMException('Session changed', 'SessionChangedError') : undefined));
     this.activeRequests.clear();
   }
 
-  private cancelBusinessRequests() {
-    this.activeBusinessRequests.forEach(controller => controller.abort());
+  private cancelBusinessRequests(reason: 'business-changed' | 'aborted' = 'aborted') {
+    this.activeBusinessRequests.forEach(controller => controller.abort(reason === 'business-changed' ? new DOMException('Business changed', 'BusinessChangedError') : undefined));
     this.activeBusinessRequests.clear();
   }
 
@@ -134,7 +137,14 @@ class ApiClient {
         throw new ApiError('The selected business changed. Please refresh its data.', 'business-changed');
       }
       if (requestController.signal.aborted) {
-        if (requestController.signal.reason?.name === 'TimeoutError') {
+        const reasonName = requestController.signal.reason?.name;
+        if (reasonName === 'SessionChangedError') {
+          throw new ApiError('Your sign-in session changed. Please try again.', 'session-changed');
+        }
+        if (reasonName === 'BusinessChangedError') {
+          throw new ApiError('The selected business changed. Please refresh its data.', 'business-changed');
+        }
+        if (reasonName === 'TimeoutError') {
           throw new ApiError('The request timed out. Please try again.', 'timeout');
         }
         throw new ApiError('Request cancelled.', 'aborted');
