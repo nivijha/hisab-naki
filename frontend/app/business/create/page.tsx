@@ -26,7 +26,6 @@ export default function BusinessCreatePage() {
   const [invalidName, setInvalidName] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdBusiness, setCreatedBusiness] = useState<{ id: string; name: string } | null>(null);
-  const [showErrorState, setShowErrorState] = useState(false);
   const creationLock = useRef(false);
 
   useEffect(() => {
@@ -56,7 +55,6 @@ export default function BusinessCreatePage() {
     setCreating(true);
     setFeedback('Creating business…');
     setFeedbackIsError(false);
-    setShowErrorState(false);
 
     const operationKey = createIdempotencyKey();
     try {
@@ -76,8 +74,7 @@ export default function BusinessCreatePage() {
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 409) {
-          setFeedback('You already have a business in your account. The current system only supports creating your first business.');
-          setShowErrorState(true);
+          setFeedback('You already have a business. The current system only supports creating your first business during initial setup. Please use your existing business or contact support.');
         } else if (error.status === 401) {
           setFeedback('Your session has expired. Please sign in again.');
         } else if (error.status === 403) {
@@ -110,6 +107,7 @@ export default function BusinessCreatePage() {
   const hasActiveBusiness = memberships.length > 0;
   const isLoading = status === 'loading' || membershipsStatus === 'loading';
   const isError = membershipsStatus === 'error';
+  const showForm = !hasActiveBusiness && !createdBusiness && !isLoading && !isError && !feedbackIsError;
 
   return (
     <main className="min-h-screen bg-beige px-5 py-10 text-forest sm:grid sm:place-items-center sm:py-16">
@@ -135,8 +133,8 @@ export default function BusinessCreatePage() {
         <section className="mt-7 rounded-xl border border-forest/10 bg-beige-light p-5 shadow-sm sm:mt-8 sm:p-8" aria-labelledby="create-business-heading">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 id="create-business-heading" className="text-2xl font-semibold tracking-tight">Create new business</h1>
-              <p className="mt-2 text-sm text-muted">Add another shop to manage its customers and ledger separately.</p>
+              <h1 id="create-business-heading" className="text-2xl font-semibold tracking-tight">Create your shop</h1>
+              <p className="mt-2 text-sm text-muted">Set up your first shop to start managing customers and daily ledger.</p>
             </div>
           </div>
 
@@ -191,22 +189,7 @@ export default function BusinessCreatePage() {
             </div>
           )}
 
-          {showErrorState && !hasActiveBusiness && !createdBusiness && !isLoading && (
-            <div className="mt-6 space-y-4">
-              <div className="rounded-lg border border-forest/15 bg-beige p-5">
-                <h2 className="text-lg font-semibold text-forest">Unable to create business</h2>
-                <p className="mt-2 text-sm text-muted">Your account already has a business. The current system only supports creating your first business during initial setup.</p>
-                <p className="mt-2 text-sm text-muted">To manage multiple businesses, please contact support or use your existing business.</p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <Button type="button" variant="outline" onClick={handleBackToSelection}>
-                  Back to business selection
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {!hasActiveBusiness && !createdBusiness && !showErrorState && !isLoading && !isError && (
+          {showForm && (
             <form className="mt-6 space-y-6" onSubmit={handleSubmit} noValidate>
               <div>
                 <label htmlFor="business-name" className="mb-1.5 block text-sm font-medium">Business name <span className="text-forest" aria-hidden="true">*</span></label>

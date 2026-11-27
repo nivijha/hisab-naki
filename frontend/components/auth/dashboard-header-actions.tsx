@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Building2 } from 'lucide-react';
+import { Building2, Users, List } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-provider';
 import { AccountDropdown } from '@/components/auth/account-dropdown';
 
@@ -25,10 +25,20 @@ export function DashboardHeaderActions() {
   return (
     <div className="relative flex items-center gap-2">
       {status === 'authenticated' && selectedBusiness && (
-        <button type="button" onClick={switchBusiness} aria-label="Switch business" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-sm px-2 text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-beige sm:px-3">
-          <Building2 aria-hidden="true" className="h-4 w-4 shrink-0" />
-          <span className="hidden lg:inline">Switch business</span>
-        </button>
+        <>
+          <Link href="/transactions" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-sm px-2 text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-beige sm:px-3" aria-label="Transactions">
+            <List aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span className="hidden lg:inline">Transactions</span>
+          </Link>
+          <Link href="/customers" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-sm px-2 text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-beige sm:px-3" aria-label="Customers">
+            <Users aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span className="hidden lg:inline">Customers</span>
+          </Link>
+          <button type="button" onClick={switchBusiness} aria-label="Switch business" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-sm px-2 text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-beige sm:px-3">
+            <Building2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span className="hidden lg:inline">Switch business</span>
+          </button>
+        </>
       )}
       <Link href="/" className="flex min-h-11 items-center text-sm font-medium text-beige underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-beige">
         Back to site

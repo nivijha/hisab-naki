@@ -14,6 +14,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'HisabNaki',
   description: 'Voice-first digital ledger for small businesses.',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
   openGraph: {
     title: 'HisabNaki — Voice-first digital ledger',
     description: 'Record sales, expenses, and credit by speaking. Built for small Indian shopkeepers.',

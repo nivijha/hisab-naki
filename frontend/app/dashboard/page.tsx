@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Mic, Clock, TrendingUp, CreditCard, Users, IndianRupee } from 'lucide-react';
+import Link from 'next/link';
+import { Mic, Clock, TrendingUp, CreditCard, Users, IndianRupee, X, HelpCircle, ArrowRight, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
@@ -681,6 +682,8 @@ export default function DashboardPage() {
     setVoiceFeedback('Preview cleared from this screen. The server-held preview remains until its configured expiry; no transaction was recorded.');
   };
 
+  const PREVIEW_ACTION_TIMEOUT_MS = 15_000;
+
   const runPreviewAction = async (action: 'resolve' | 'create' | 'confirm', body?: Record<string, unknown>) => {
     if (!voicePreview || !selectedBusinessId) return;
     const previewId = voicePreview.id;
@@ -695,13 +698,13 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body ?? {}),
-      });
+      }, 'business', PREVIEW_ACTION_TIMEOUT_MS);
       if (!isRecord(result) || result.ok !== true) throw new ApiError('Preview action did not complete.', 'invalid-response');
       const preview = normalizeTransactionPreview(result.data, selectedBusinessId);
       if (!preview) throw new ApiError('The server returned an invalid preview response.', 'invalid-response');
       applyPreviewResult(preview);
       if (action === 'confirm' && preview.state === 'confirmed') {
-        setVoiceFeedback('Transaction confirmed. The ledger was updated only after your explicit confirmation.');
+        setVoiceFeedback('Transaction confirmed and recorded in the ledger.');
         void loadDashboard(true);
         void loadCustomers(true);
         void loadTransactions(true);
@@ -716,6 +719,10 @@ export default function DashboardPage() {
 
   const applyPreviewResult = (preview: TransactionPreview) => {
     setVoicePreview(preview);
+    if (preview.state === 'confirmed') {
+      setVoicePhase('preview');
+      return;
+    }
     setVoicePhase('preview');
     const resolution = preview.customerResolution;
     if (preview.intent === 'ADD_CUSTOMER') {
@@ -1129,113 +1136,358 @@ export default function DashboardPage() {
     </div>
   ) : null;
 
-  return (
+return (
     <div className="space-y-6 sm:space-y-8">
       <div className="min-w-0 break-words">
         <h1 className="text-3xl font-bold text-forest tracking-tight">{selectedBusiness?.businessName || summary?.businessName || 'Dashboard'}</h1>
         <p className="mt-1 text-sm text-muted">Voice-first digital ledger</p>
       </div>
 
-      <ScrollReveal className="break-words rounded-md border border-forest/10 bg-white p-4 shadow-soft sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`recording-indicator ${voicePhase === 'listening' ? 'is-live' : ''}`} aria-hidden="true" />
-            <h2 id="voice-input" tabIndex={-1} className="text-xl font-semibold text-forest">Voice input</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button type="button" onClick={startVoiceCapture} onKeyDown={event => {
-              if (event.key !== 'Escape' || recognitionStartupTimerRef.current === null) return;
-              event.preventDefault();
-              event.stopPropagation();
-              releaseRecognition(true);
-              setVoicePhase('idle');
-              setVoiceFeedback('Microphone startup cancelled. You can try again when ready.');
-            }} disabled={previewBusy || Boolean(voicePreview)} aria-pressed={voicePhase === 'listening'} aria-describedby="voice-feedback" className="w-48 shrink-0">
-              <span className="mic-motion mr-2 flex h-7 w-7 items-center justify-center">
-                <Mic aria-hidden="true" className="h-5 w-5" />
+      <ScrollReveal className="break-words rounded-xl border border-forest/10 bg-white p-5 shadow-soft sm:p-8">
+        <div className="text-center">
+          <h2 id="voice-input" className="sr-only">Voice input</h2>
+
+          <div className="relative flex flex-col items-center gap-4">
+            <div className={`voice-ring ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`} aria-hidden="true">
+              <div className="voice-ring-inner" />
+            </div>
+
+            <Button
+              type="button"
+              onClick={startVoiceCapture}
+              onKeyDown={event => {
+                if (event.key !== 'Escape' || recognitionStartupTimerRef.current === null) return;
+                event.preventDefault();
+                event.stopPropagation();
+                releaseRecognition(true);
+                setVoicePhase('idle');
+                setVoiceFeedback('Microphone startup cancelled. You can try again when ready.');
+              }}
+              disabled={previewBusy || Boolean(voicePreview)}
+              aria-pressed={voicePhase === 'listening'}
+              aria-describedby="voice-feedback"
+              aria-label={voicePhase === 'listening' ? 'Stop listening' : voicePhase === 'starting' ? 'Starting microphone…' : 'Start voice recording'}
+              className={`voice-mic-button ${voicePhase === 'listening' ? 'is-listening' : ''} ${voicePhase === 'processing' ? 'is-processing' : ''} ${voicePhase === 'preview' ? 'has-preview' : ''} ${voicePhase === 'error' ? 'has-error' : ''} ${voicePhase === 'starting' ? 'is-starting' : ''}`}
+            >
+              <span className="mic-motion flex h-full w-full items-center justify-center">
+                <Mic aria-hidden="true" className="h-12 w-12 sm:h-16 sm:w-16" />
               </span>
-              {voicePhase === 'listening' ? 'Stop listening' : voicePhase === 'starting' ? 'Starting microphone…' : 'Start speaking'}
             </Button>
-            <a href="#customers" className="inline-flex min-h-11 items-center rounded-sm px-2 text-sm font-medium text-forest underline underline-offset-4 hover:bg-beige-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
-              Find customer
-            </a>
+
+            <div className="voice-status" role="status" aria-live="polite" aria-atomic="true">
+              {voicePhase === 'listening' && (
+                <div className="voice-status-listening">
+                  <VoiceWaveform animate={true} className="h-6 w-48 sm:w-64" />
+                  <p className="mt-2 text-sm text-forest">Listening… speak now</p>
+                </div>
+              )}
+              {voicePhase === 'starting' && (
+                <p className="text-sm text-muted">Starting microphone…</p>
+              )}
+              {voicePhase === 'processing' && (
+                <div className="voice-status-processing">
+                  <div className="voice-spinner" aria-hidden="true" />
+                  <p className="text-sm text-forest">Processing your speech…</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (previewRequestRef.current) {
+                        previewRequestRef.current.abort();
+                        previewRequestRef.current = null;
+                      }
+                      setPreviewBusy(false);
+                      setVoicePhase('idle');
+                      setVoiceFeedback('Interpretation cancelled. You can try speaking again.');
+                    }}
+                    className="mt-2 min-h-0 px-3 py-1.5 text-xs"
+                    aria-label="Cancel interpretation"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+              {voicePhase === 'preview' && (
+                <p className="text-sm text-purple">Preview ready — review below</p>
+              )}
+              {voicePhase === 'error' && (
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-full px-4 py-1.5">{voiceFeedback}</p>
+              )}
+              {voicePhase === 'idle' && !voiceTranscript && !voicePreview && (
+                <p className="text-sm text-muted">Tap the microphone and speak in Hindi or Hinglish</p>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="mt-3 rounded-lg border border-purple/20 bg-purple/5 p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-3" aria-hidden={voicePhase !== 'listening'}>
-            <VoiceWaveform animate={voicePhase === 'listening'} className="h-8 w-32 shrink-0" />
-            <p className="text-xs text-muted">{voicePhase === 'listening' ? 'Listening now' : 'Voice status'}</p>
+
+          <div id="voice-feedback" className="mt-4 min-h-[2.5rem] text-sm text-forest" aria-live="polite" aria-atomic="true">
+            {voicePhase === 'idle' && !voiceTranscript && !voicePreview ? (
+              <p className="text-muted">Your words become ledger entries automatically.</p>
+            ) : (
+              <p>{voiceFeedback}</p>
+            )}
           </div>
-          <p id="voice-feedback" role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-sm text-forest">
-            {voiceFeedback}
-          </p>
-          {voiceTranscript && <div className="mt-3 rounded-md border border-forest/10 bg-white p-3">
+
+          {voiceTranscript && <div className="mt-4 rounded-md border border-forest/10 bg-white p-3 text-left">
             <p className="text-xs font-medium uppercase tracking-wide text-muted">Recognized speech</p>
             <p className="mt-1 [overflow-wrap:anywhere] text-sm text-forest">{voiceTranscript}</p>
           </div>}
-          {voicePreview && <section aria-labelledby="voice-preview-title" className="mt-3 space-y-3 rounded-md border border-forest/15 bg-white p-3 sm:p-4">
-            <div>
-              <h3 id="voice-preview-title" className="font-semibold text-forest">Server interpretation · suggestion only</h3>
-              <p className="mt-1 text-xs text-muted">This is not a verified ledger entry and no transaction has been recorded.</p>
+
+          <div className="mt-5 rounded-lg border border-forest/10 bg-beige-light p-4 sm:p-5 text-left">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">Try saying things like:</p>
+            <ul className="mt-2 grid gap-2 sm:grid-cols-2" role="list">
+              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
+                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+                "Rahul ko 500 rupaye udhaar diye"
+              </li>
+              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
+                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+                "Amit se 200 rupaye mile"
+              </li>
+              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
+                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+                "Suman ka 300 rupaye baaki hai"
+              </li>
+              <li className="flex items-center gap-2 rounded-md border border-forest/15 bg-white px-3 py-2 text-sm text-forest">
+                <span className="flex h-5 w-5 items-center justify-center shrink-0 text-purple" aria-hidden="true">💬</span>
+                "Rajesh ne 1000 rupaye wapas kiye"
+              </li>
+            </ul>
+          </div>
+
+          {voicePreview && <section aria-labelledby="voice-preview-title" className="mt-5 space-y-4 rounded-xl border border-forest/15 bg-white p-4 sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="voice-preview-title" className="font-semibold text-forest">Review transaction preview</h3>
+                <p className="mt-1 text-xs text-muted">This is a suggestion only — no transaction has been recorded yet.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" disabled={previewActionBusy !== null} onClick={clearVoicePreview}>
+                <X className="h-4 w-4 mr-1" aria-hidden="true" />
+                Clear
+              </Button>
             </div>
-            <dl className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
-              <dt className="font-medium text-muted">Intent</dt><dd className="break-words text-forest">{voicePreview.intent}</dd>
-              <dt className="font-medium text-muted">Parser status</dt><dd className="text-forest">{readOnlyPreviewIntents.has(voicePreview.intent)
-                ? voicePreview.confidence > 0 ? 'Read-only intent; no live ledger lookup was performed' : 'Request unclear; no ledger lookup was performed'
-                : voicePreview.readyForConfirmation ? 'Backend marked complete (not independently verified)' : 'Backend marked incomplete'}</dd>
-              {voicePreview.type && <><dt className="font-medium text-muted">Transaction type</dt><dd className="text-forest">{voicePreview.type}</dd></>}
-              {voicePreview.customerName && <><dt className="font-medium text-muted">Customer name from parser</dt><dd className="break-words text-forest">{voicePreview.customerName}</dd></>}
-              {typeof voicePreview.amount === 'number' && <><dt className="font-medium text-muted">Amount from parser</dt><dd className="text-[clamp(0.75rem,4vw,1.125rem)] font-semibold text-forest [overflow-wrap:anywhere]">{formatInrAmount(voicePreview.amount)}</dd></>}
-              {voicePreview.description && <><dt className="font-medium text-muted">Description</dt><dd className="break-words text-forest">{voicePreview.description}</dd></>}
-              <dt className="font-medium text-muted">Preview ID</dt><dd className="break-all font-mono text-xs text-forest">{voicePreview.id}</dd>
-              <dt className="font-medium text-muted">Prepared</dt><dd className="text-forest">{formatDate(voicePreview.createdAt)}</dd>
-            </dl>
-            {previewDirection && <p className="rounded-md bg-beige-light p-3 text-sm text-forest">{previewDirection}</p>}
-            {voicePreview.customerResolution?.status === 'ambiguous' && (
-              <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
-                <p className="font-medium">Multiple matching customers found. Select the correct one:</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {voicePreview.customerResolution.candidates.map((candidate) => (
-                    <Button key={candidate.id} type="button" variant="outline" disabled={previewActionBusy !== null} onClick={() => void runPreviewAction('resolve', { customerId: candidate.id })}>
-                      {candidate.name}{candidate.phone ? ` · ${candidate.phone}` : ''}
-                    </Button>
+
+            <div className="rounded-lg border border-purple/20 bg-purple/5 p-4">
+              <dl className="grid min-w-0 gap-x-4 gap-y-3 text-sm sm:grid-cols-[auto_1fr]">
+                {voicePreview.type && (
+                  <>
+                    <dt className="font-medium text-forest">Transaction type</dt>
+                    <dd className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center rounded-full bg-purple/20 px-2.5 py-0.5 text-xs font-semibold text-purple">
+                        {voicePreview.type}
+                      </span>
+                      <span className="text-forest capitalize">
+                        {voicePreview.type === 'CREDIT' ? 'Credit given' : voicePreview.type === 'PAYMENT' ? 'Payment received' : voicePreview.type === 'SALE' ? 'Sale recorded' : 'Expense recorded'}
+                      </span>
+                    </dd>
+                  </>
+                )}
+                {voicePreview.customerName && (
+                  <>
+                    <dt className="font-medium text-forest">Customer</dt>
+                    <dd className="break-words text-forest">
+                      {voicePreview.customerName}
+                      {voicePreview.customerId && <span className="text-xs text-muted ml-2">(ID: {voicePreview.customerId.slice(0, 8)}…)</span>}
+                    </dd>
+                  </>
+                )}
+                {typeof voicePreview.amount === 'number' && (
+                  <>
+                    <dt className="font-medium text-forest">Amount</dt>
+                    <dd className="text-[clamp(1rem,4vw,1.25rem)] font-bold text-forest [overflow-wrap:anywhere]">
+                      {formatInrAmount(voicePreview.amount)}
+                    </dd>
+                  </>
+                )}
+                {voicePreview.description && (
+                  <>
+                    <dt className="font-medium text-forest">Description</dt>
+                    <dd className="break-words text-forest">{voicePreview.description}</dd>
+                  </>
+                )}
+                <dt className="font-medium text-forest">Parser confidence</dt>
+                <dd className="text-forest">{Math.round(voicePreview.confidence * 100)}%</dd>
+                <dt className="font-medium text-forest">Preview ID</dt>
+                <dd className="break-all font-mono text-xs text-forest">{voicePreview.id}</dd>
+                <dt className="font-medium text-forest">Prepared</dt>
+                <dd className="text-forest">{formatDate(voicePreview.createdAt)}</dd>
+              </dl>
+            </div>
+
+            {voicePreview.customerResolution && (
+              <div className="space-y-3">
+                {voicePreview.customerResolution.status === 'matched' && (
+                  <div className="rounded-lg border border-forest/10 bg-beige-light p-3 text-sm text-forest" role="status">
+                    <p className="font-medium flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-forest/10 text-forest" aria-hidden="true">✓</span>
+                      Customer matched: <strong>{voicePreview.customerResolution.customerName}</strong>
+                      {voicePreview.customerResolution.customerId && <span className="text-xs text-muted">(ID: {voicePreview.customerResolution.customerId.slice(0, 8)}…)</span>}
+                    </p>
+                  </div>
+                )}
+                {voicePreview.customerResolution.status === 'ambiguous' && (
+                  <div role="alert" className="rounded-lg border border-forest/15 bg-beige-light p-4 text-sm text-forest">
+                    <p className="font-medium flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple/20 text-purple" aria-hidden="true">!</span>
+                      Multiple customers match this name. Please select the correct one:
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {voicePreview.customerResolution.candidates.map((candidate) => (
+                        <Button
+                          key={candidate.id}
+                          type="button"
+                          variant="outline"
+                          disabled={previewActionBusy !== null}
+                          onClick={() => void runPreviewAction('resolve', { customerId: candidate.id })}
+                          className="min-w-[140px]"
+                        >
+                          {candidate.name}{candidate.phone ? ` · ${candidate.phone}` : ''}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-muted">Selecting a customer will update the preview. You can then review and confirm.</p>
+                  </div>
+                )}
+                {voicePreview.customerResolution.status === 'unknown' && (
+                  <div role="alert" className="rounded-lg border border-forest/15 bg-beige-light p-4 text-sm text-forest">
+                    <p className="font-medium flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-700" aria-hidden="true">✕</span>
+                      No matching customer found for <strong>"{voicePreview.customerResolution.requestedName ?? voicePreview.customerName}"</strong>
+                    </p>
+                    <p className="mt-2">Create this customer only if you explicitly approve. Customer creation does not record a transaction.</p>
+                    <div className="mt-3">
+                      <Button
+                        type="button"
+                        disabled={previewActionBusy !== null || !voicePreview.customerResolution.requestedName}
+                        onClick={() => void runPreviewAction('create', { name: voicePreview.customerResolution?.requestedName ?? voicePreview.customerName })}
+                      >
+                        {previewActionBusy === 'create' ? 'Creating customer…' : 'Create customer'}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">After creation, the preview will update. You can then review and confirm the transaction separately.</p>
+                  </div>
+                )}
+                {voicePreview.customerResolution.status === 'created' && (
+                  <div className="rounded-lg border border-forest/10 bg-beige-light p-3 text-sm text-forest" role="status">
+                    <p className="font-medium flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple/20 text-purple" aria-hidden="true">✓</span>
+                      Customer created: <strong>{voicePreview.customerResolution.customerName}</strong>
+                      {voicePreview.customerResolution.customerId && <span className="text-xs text-muted">(ID: {voicePreview.customerResolution.customerId.slice(0, 8)}…)</span>}
+                    </p>
+                    <p className="mt-1 text-xs text-muted">Review the updated preview and confirm the transaction if correct.</p>
+                  </div>
+                )}
+                {voicePreview.customerResolution.status === 'not_required' && (
+                  <div className="rounded-lg border border-forest/10 bg-beige-light p-3 text-sm text-forest" role="status">
+                    <p className="font-medium flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-forest/10 text-forest" aria-hidden="true">ℹ</span>
+                      No customer needed for this transaction type.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {voicePreview.missingFields.length > 0 && (
+              <div role="alert" className="rounded-lg border border-forest/15 bg-beige-light p-4 text-sm text-forest">
+                <p className="font-medium flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-700" aria-hidden="true">!</span>
+                  Missing information:
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-1">
+                  {voicePreview.missingFields.map((field, index) => (
+                    <li key={`${field}-${index}`} className="break-words">{field}</li>
                   ))}
-                </div>
+                </ul>
+                <p className="mt-2 text-xs text-muted">Try speaking again with the missing details, or use manual entry.</p>
               </div>
             )}
-            {voicePreview.customerResolution?.status === 'unknown' && (
-              <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
-                <p className="font-medium">No matching customer found in this business.</p>
-                <p className="mt-1">Create &quot;{voicePreview.customerResolution.requestedName ?? voicePreview.customerName}&quot; only if you explicitly approve. Customer creation does not record a transaction.</p>
-                <div className="mt-2">
-                  <Button type="button" disabled={previewActionBusy !== null || !voicePreview.customerResolution.requestedName} onClick={() => void runPreviewAction('create', { name: voicePreview.customerResolution?.requestedName ?? voicePreview.customerName })}>
-                    {previewActionBusy === 'create' ? 'Creating customer…' : 'Create customer'}
-                  </Button>
-                </div>
+
+            {readOnlyPreviewIntents.has(voicePreview.intent) && (
+              <div className="rounded-lg border border-forest/10 bg-beige-light p-4 text-sm text-forest" role="status">
+                <p className="font-medium flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-forest/10 text-forest" aria-hidden="true">ℹ</span>
+                  Read-only request
+                </p>
+                <p className="mt-1">
+                  {voicePreview.confidence > 0
+                    ? 'This is a balance or history query. No live ledger lookup was performed, and nothing was recorded.'
+                    : 'The server could not understand this request. No balance or transaction history was fetched.'}
+                </p>
+                <p className="mt-2 text-xs text-muted">Use "Find customer" to view the ledger, or try speaking again.</p>
               </div>
             )}
-            {voicePreview.missingFields.length > 0 && <div role="alert" className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
-              <p className="font-medium">The parser reports missing information:</p>
-              <ul className="mt-1 list-inside list-disc">{voicePreview.missingFields.map((field, index) => <li key={`${field}-${index}`} className="break-words">{field}</li>)}</ul>
-            </div>}
+
             {isSupportedPreviewWrite(voicePreview) && (
-              <p className="rounded-md border border-forest/15 bg-beige-light p-3 text-sm text-forest">
-                Review carefully. Confirming will record this financial transaction.
-              </p>
+              <div className="rounded-lg border border-forest/15 bg-beige-light p-4 text-sm text-forest" role="alert">
+                <p className="font-medium flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple/20 text-purple" aria-hidden="true">⚠</span>
+                  Ready to confirm
+                </p>
+                <p className="mt-1">Review the details above carefully. Confirming will record this financial transaction in the ledger.</p>
+              </div>
             )}
-            <div className="flex flex-wrap gap-2">
+
+            <div className="flex flex-wrap gap-3 pt-2 border-t border-forest/10">
               {isSupportedPreviewWrite(voicePreview) && (
-                <Button type="button" disabled={previewActionBusy !== null} onClick={() => void runPreviewAction('confirm')}>
-                  {previewActionBusy === 'confirm' ? 'Confirming…' : 'Confirm transaction'}
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={previewActionBusy !== null}
+                  onClick={() => void runPreviewAction('confirm')}
+                  className="flex-1 min-w-[160px]"
+                >
+                  {previewActionBusy === 'confirm' ? (
+                    <>
+                      <span className="mr-2 flex h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+                      Confirming…
+                    </>
+                  ) : (
+                    'Confirm transaction'
+                  )}
                 </Button>
               )}
-              <Button type="button" variant="outline" disabled={previewActionBusy !== null} onClick={clearVoicePreview}>Clear preview</Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                disabled={previewActionBusy !== null}
+                onClick={clearVoicePreview}
+                className="flex-1 min-w-[160px]"
+              >
+                <X className="h-4 w-4 mr-1" aria-hidden="true" />
+                Cancel
+              </Button>
             </div>
+
+            {voicePreview.state === 'confirmed' && (
+              <div className="rounded-lg border border-forest/10 bg-green-50 p-4 text-sm text-green-800" role="status">
+                <p className="font-medium flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-green-100 text-green-700" aria-hidden="true">✓</span>
+                  Transaction confirmed and recorded.
+                </p>
+                {voicePreview.customerId && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href={`/customers/${voicePreview.customerId}`}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-forest underline underline-offset-2 hover:text-forest-dark"
+                    >
+                      <span aria-hidden="true">→</span>
+                      View customer ledger
+                    </Link>
+                    <Button type="button" variant="outline" size="sm" onClick={clearVoicePreview}>
+                      Continue
+                    </Button>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-green-700">The dashboard and customer list have been updated with the new transaction.</p>
+              </div>
+            )}
           </section>}
         </div>
       </ScrollReveal>
 
-      <section id="financial-summary" tabIndex={-1} aria-labelledby="dashboard-summary-heading">
+<section id="financial-summary" tabIndex={-1} aria-labelledby="dashboard-summary-heading">
         <h2 id="dashboard-summary-heading" className="sr-only">Dashboard summary</h2>
         {summaryState.status === 'error' && (
           <div className="mb-2">
@@ -1247,7 +1499,7 @@ export default function DashboardPage() {
             const amount = formatInrAmount(summary?.[card.key]);
             const compactAmount = amount.length > 12;
             return (
-            <Card key={card.key}>
+            <Card key={card.key} className="relative overflow-hidden">
               <CardHeader className="items-center justify-between space-y-0 px-2 pb-2 text-center sm:px-4">
                 <h3 className={`flex min-h-10 items-center text-sm font-medium tracking-tight ${card.key === 'totalOutstanding' ? 'text-forest' : 'text-muted'}`}>
                   {card.label}
@@ -1269,6 +1521,37 @@ export default function DashboardPage() {
             );
           })}
         </ScrollReveal>
+
+        <ScrollReveal delay={0.05} className="rounded-xl border border-forest/10 bg-white p-4 sm:p-5 shadow-soft">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-purple/10 flex items-center justify-center">
+                <List className="h-5 w-5 text-purple" aria-hidden="true" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-forest">Quick actions</h3>
+                <p className="text-xs text-muted">Navigate to detailed views</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/transactions"
+                className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-lg border border-forest/20 bg-white text-sm font-medium text-forest hover:bg-beige-light hover:border-forest/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors"
+              >
+                <List className="h-4 w-4" aria-hidden="true" />
+                View all transactions
+              </Link>
+              <Link
+                href="/customers"
+                className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-lg border border-forest/20 bg-white text-sm font-medium text-forest hover:bg-beige-light hover:border-forest/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest transition-colors"
+              >
+                <Users className="h-4 w-4" aria-hidden="true" />
+                Manage customers
+              </Link>
+            </div>
+          </div>
+        </ScrollReveal>
+
         {summaryState.status === 'loading' && (
           <p role="status" className={summary ? 'mt-2 text-center text-sm text-muted' : 'sr-only'}>
             {summary ? 'Updating dashboard summary. Showing last loaded amounts.' : 'Loading dashboard summary…'}
@@ -1450,7 +1733,17 @@ export default function DashboardPage() {
         <ScrollReveal delay={0.2} className="rounded-lg border border-forest/10 bg-white p-6 shadow-soft">
           <CardHeader className="px-0 pt-0">
             <div className="flex flex-wrap items-center justify-between gap-x-3">
-              <CardTitle id="recent-transactions" tabIndex={-1} className="text-lg">Recent transactions</CardTitle>
+              <div className="flex items-center gap-3">
+                <CardTitle id="recent-transactions" tabIndex={-1} className="text-lg">Recent transactions</CardTitle>
+                <Link
+                  href="/transactions"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-forest underline underline-offset-2 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+                  aria-label="View all transactions"
+                >
+                  <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                  View all
+                </Link>
+              </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <Button ref={manualEntryTrigger} type="button" variant="link" size="sm" className="px-0 underline" aria-expanded={manualEntryOpen} aria-controls={manualEntryOpen ? 'manual-entry' : undefined} onClick={() => manualEntryOpen ? cancelManualEntry() : startManualEntry()}>
                   {manualEntryOpen ? 'Close manual entry' : 'Prepare manual entry'}

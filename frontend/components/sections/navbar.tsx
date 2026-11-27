@@ -27,21 +27,41 @@ export function Navbar() {
   };
 
   const handleNavigationKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (!open || event.key !== 'Tab' || !menuTrigger.current?.getClientRects().length) return;
+    if (!open || event.key !== 'Tab') return;
 
     const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('#mobile-navigation a'));
-    const lastLink = links.at(-1);
-    if (event.shiftKey && event.target === menuTrigger.current) {
-      event.preventDefault();
-      lastLink?.focus();
-    } else if (!event.shiftKey && event.target === lastLink) {
-      event.preventDefault();
-      menuTrigger.current.focus();
+    if (!links.length) return;
+
+    const firstLink = links[0];
+    const lastLink = links.at(-1)!;
+
+    const isFocusInMenu = links.some(link => link === document.activeElement || link.contains(document.activeElement as Node));
+    const isFocusOnTrigger = menuTrigger.current === document.activeElement;
+
+    if (event.shiftKey) {
+      if (isFocusOnTrigger || (!isFocusInMenu && document.activeElement === document.body)) {
+        event.preventDefault();
+        lastLink.focus();
+      } else if (document.activeElement === firstLink) {
+        event.preventDefault();
+        menuTrigger.current?.focus();
+      }
+    } else {
+      if (isFocusOnTrigger) {
+        event.preventDefault();
+        firstLink.focus();
+      } else if (document.activeElement === lastLink) {
+        event.preventDefault();
+        menuTrigger.current?.focus();
+      }
     }
   };
 
   useEffect(() => {
     if (!open) return;
+
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('#mobile-navigation a'));
+    links[0]?.focus();
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !menuTrigger.current?.getClientRects().length) return;
@@ -107,10 +127,10 @@ export function Navbar() {
               </Link>
             ))}
             <Link
-              href="/dashboard"
+              href="/login"
               className="motion-interactive inline-flex min-h-11 items-center gap-2 rounded-sm bg-purple px-5 text-sm font-semibold text-forest-dark hover:bg-beige focus-visible:outline-offset-4"
             >
-              Open ledger
+              Sign in
             </Link>
           </div>
 
@@ -154,11 +174,11 @@ export function Navbar() {
                 </Link>
               ))}
               <Link
-                href="/dashboard"
+                href="/login"
                 onClick={() => setOpen(false)}
                 className="motion-interactive mt-4 flex min-h-12 items-center justify-center gap-2 rounded-sm bg-purple px-5 text-sm font-semibold text-forest-dark"
               >
-                Open ledger
+                Sign in
               </Link>
             </div>
           </div>

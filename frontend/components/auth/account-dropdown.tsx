@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { LogOut, User, Settings, Building2, ChevronDown } from 'lucide-react';
+import { LogOut, User, Building2, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-provider';
 
 interface AccountDropdownProps {
@@ -155,17 +155,6 @@ export function AccountDropdown({ onClose }: AccountDropdownProps) {
             >
               <Building2 className="h-4 w-4 shrink-0 text-forest/50" aria-hidden="true" />
               Switch Business
-            </Link>
-
-            <Link
-              href="/settings"
-              role="menuitem"
-              tabIndex={-1}
-              className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm text-forest hover:bg-beige-light focus:bg-beige-light focus:outline-none"
-              onClick={() => closeAndRestoreFocus()}
-            >
-              <Settings className="h-4 w-4 shrink-0 text-forest/50" aria-hidden="true" />
-              Settings
             </Link>
 
             <div className="my-1.5 border-t border-forest/10" aria-hidden="true" />

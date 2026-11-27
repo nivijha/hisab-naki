@@ -152,9 +152,16 @@ export default function BusinessSelectionPage() {
         try { window.sessionStorage.removeItem(operationStorageKey); } catch { /* The server response confirms creation; memberships will reconcile it. */ }
       }
       setPendingOperation(null);
-      setBusinessFeedback(`“${result.business.name}” is ready. Select it below to open your ledger.`);
+      setBusinessFeedback(`“${result.business.name}” created. Opening your ledger…`);
       setBusinessFeedbackIsError(false);
       await refreshMemberships(true);
+      const ok = selectBusiness(result.business.id);
+      if (ok) {
+        router.replace('/dashboard');
+      } else {
+        setBusinessFeedback('Business created but could not select it automatically. Please select it from the list below.');
+        setBusinessFeedbackIsError(true);
+      }
     } catch (error) {
       setBusinessFeedback(businessSetupError(error));
       setBusinessFeedbackIsError(true);
@@ -177,6 +184,10 @@ export default function BusinessSelectionPage() {
     }).catch(() => undefined).finally(() => { refreshListPending.current = false; });
   };
 
+  const hasBusinesses = memberships.length > 0;
+  const isLoading = status === 'loading' || membershipsStatus === 'loading' || membershipsStatus === 'idle';
+  const isError = membershipsStatus === 'error';
+
   return (
     <main className="min-h-screen bg-beige px-5 py-8 text-forest sm:grid sm:place-items-center sm:py-12">
       <div className="mx-auto w-full max-w-2xl">
@@ -198,15 +209,15 @@ export default function BusinessSelectionPage() {
           {logoutError && <p role="alert" className="mt-5 rounded-md border border-forest/15 bg-beige p-3 text-sm">{logoutError}</p>}
           {businessAccessError && <p role="alert" className="mt-5 rounded-md border border-forest/15 bg-beige p-3 text-sm">{businessAccessError}</p>}
 
-          {status === 'loading' || membershipsStatus === 'loading' || membershipsStatus === 'idle' ? (
+          {isLoading ? (
             <p role="status" className="mt-6 rounded-lg border border-forest/10 bg-beige p-4 text-sm text-forest">Loading your businesses…</p>
-          ) : membershipsStatus === 'error' ? (
+          ) : isError ? (
             <div className="mt-6 rounded-lg border border-forest/10 bg-beige p-4" role="group" aria-label="Membership loading error">
               {createdBusinessName && <p role="status" className="mb-3 text-sm text-forest">“{createdBusinessName}” was created. Refresh the list to select it.</p>}
               <p role="alert" className="text-sm text-forest">{membershipsError || 'Could not load your businesses.'}</p>
               <Button type="button" className="mt-4" onClick={() => { void refreshMemberships().catch(() => undefined); }}>Retry</Button>
             </div>
-          ) : memberships.length === 0 ? (
+          ) : !hasBusinesses ? (
             <div className="mt-6 rounded-lg border border-forest/10 bg-beige p-4 sm:p-5">
               <h2 id="first-shop-heading" className="text-lg font-semibold">Set up your first shop</h2>
               <p className="mt-2 text-sm leading-6 text-muted">Create a shop to keep its customers and daily ledger together. You’ll choose the shop before opening dashboard data.</p>
@@ -249,18 +260,15 @@ export default function BusinessSelectionPage() {
                 })}
               </ul>
 
-              <Link
-                href="/business/create"
-                className="mt-6 flex group w-full items-center justify-center gap-3 rounded-lg border border-forest/20 bg-white p-5 text-left transition-colors duration-200 hover:bg-beige-light hover:border-forest/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-purple/10 text-purple group-hover:bg-purple/20 transition-colors shrink-0">
+              <div className="mt-6 flex group w-full items-center justify-center gap-3 rounded-lg border border-forest/20 bg-beige-light p-4 text-left text-sm text-muted">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-forest/10 text-forest/50 shrink-0">
                   <Plus className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div className="text-left">
-                  <h3 className="font-semibold text-forest">Add a new business</h3>
-                  <p className="mt-1 text-sm text-muted">Create another shop to manage separately</p>
+                  <h3 className="font-semibold text-forest">Add another business</h3>
+                  <p className="mt-1 text-sm text-muted">The current system only supports your first business. Contact support for multi-business access.</p>
                 </div>
-              </Link>
+              </div>
             </>
           )}
         </section>
