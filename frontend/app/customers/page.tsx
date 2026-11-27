@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, X, Users, Edit, Trash2, Eye } from 'lucide-react';
+import { ArrowLeft, Plus, Search, X, Users, Edit, Trash2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
@@ -760,39 +760,42 @@ export default function CustomersPage() {
 
   const isMutating = mutationPending || mutationUncertain || financialOperationStatus !== 'idle';
 
+  const viewLedger = (customerId: string) => {
+    router.push(`/customers/${customerId}`);
+  };
+
   return (
     <DashboardAccessBoundary>
       <div className="mx-auto w-full max-w-[1200px] min-w-0 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
         {/* Page Header */}
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between min-w-0 break-words">
-          <div>
-            <h1 className="text-3xl font-bold text-forest tracking-tight">Customers</h1>
-            <p className="mt-1 text-sm text-muted">Manage customers for {selectedBusiness?.businessName}</p>
+        <header className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-col items-start gap-2">
+            <Link
+              href="/dashboard"
+              className="inline-flex min-h-11 max-w-full shrink-0 items-center gap-2 text-sm font-medium text-forest underline underline-offset-4 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+              aria-label="Back to dashboard"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back to dashboard
+            </Link>
+            <div className="flex min-w-0 flex-col items-start gap-1">
+              <h1 className="min-w-0 break-words text-[clamp(1.5rem,4vw,2rem)] font-bold leading-tight tracking-tight text-forest">Customers</h1>
+              <p className="text-sm leading-6 text-muted">Manage customers for {selectedBusiness?.businessName}</p>
+            </div>
           </div>
-          <Button
-            ref={addCustomerTrigger}
-            type="button"
-            size="sm"
-            className="shrink-0 w-full sm:w-auto min-h-11"
-            disabled={isMutating}
-            onClick={openCreateCustomer}
-          >
-            <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
-            Add customer
-          </Button>
         </header>
 
         {/* Customer Overview Section */}
         <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white shadow-card">
-          <div className="p-4 sm:p-5">
-            {/* Section Header */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div className="flex flex-col gap-4 p-4 sm:p-5">
+            {/* Section Header with Add button */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-forest">All customers</h2>
               <Button
                 ref={addCustomerTrigger}
                 type="button"
                 size="sm"
-                className="shrink-0 w-full sm:w-auto min-h-11"
+                className="shrink-0 min-h-11"
                 disabled={isMutating}
                 onClick={openCreateCustomer}
               >
@@ -864,7 +867,7 @@ export default function CustomersPage() {
                       duplicate={duplicate}
                       onEdit={() => openEditCustomer(customer, customerActionTrigger.current!)}
                       onDelete={() => openDeleteConfirmation(customer, customerActionTrigger.current!)}
-                      onViewLedger={() => {}}
+                      onViewLedger={() => viewLedger(customer.id)}
                       disabled={isMutating}
                     />
                   );
