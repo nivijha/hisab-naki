@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, X, Users } from 'lucide-react';
+import { Plus, Search, X, Users, Edit, Trash2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
 import { DashboardAccessBoundary } from '@/components/auth/dashboard-access-boundary';
 import { useAuth } from '@/components/auth/auth-provider';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { formatInrAmount, readInrAmount } from '@/lib/inr';
-import { normalizeTransactionList, type NormalizedTransaction } from '@/lib/transaction-contract';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -126,6 +125,403 @@ function PanelError({ panel, retry, message }: { panel: string; retry: () => voi
   );
 }
 
+function SearchInput({ value, onChange, onClear, placeholder, autoFocus = false }: {
+  value: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+  placeholder: string;
+  autoFocus?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
+
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none" aria-hidden="true" />
+      <input
+        ref={inputRef}
+        type="search"
+        value={value}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="min-h-11 w-full rounded-sm border border-forest/60 bg-white pl-10 pr-14 py-2 text-base text-forest placeholder:text-muted focus:border-forest focus:outline-2 focus:outline-offset-2 focus:outline-forest"
+      />
+      {value && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="absolute right-1 top-1/2 -translate-y-1/2 h-9 px-2"
+          onClick={onClear}
+          aria-label="Clear search"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CustomerCard({
+  customer,
+  duplicate,
+  onEdit,
+  onDelete,
+  onViewLedger,
+  disabled,
+}: {
+  customer: Customer;
+  duplicate: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onViewLedger: () => void;
+  disabled: boolean;
+}) {
+  const outstanding = formatInrAmount(customer.outstandingBalance);
+  const isPositive = !customer.outstandingBalance.startsWith('-');
+
+  return (
+    <Link
+      href={`/customers/${customer.id}`}
+      className="block rounded-lg border border-forest/10 bg-white transition-colors hover:bg-beige-light/50 focus-visible:outline-2 focus-visible:outline-forest focus-visible:outline-offset-2"
+      onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (e.currentTarget === e.target) return;
+        e.preventDefault();
+      }}
+    >
+      <div className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-forest text-base leading-snug break-words">{customer.name}</p>
+                {duplicate && <p className="mt-0.5 text-xs text-muted">Customer ID {customer.id}</p>}
+              </div>
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-purple/10 px-2.5 py-0.5 text-xs font-semibold text-forest">
+                {customer.transactionCount} txn{customer.transactionCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <p className="text-sm text-muted break-words">{customer.phone || 'No phone saved'}</p>
+
+            <div className="flex items-baseline gap-1.5">
+              <span className={`font-bold text-forest [overflow-wrap:anywhere] ${outstanding.length > 14 ? 'text-[clamp(0.875rem,2.5vw,1.125rem)]' : 'text-lg'}`}>
+                {outstanding}
+              </span>
+              <span className="text-xs text-muted">outstanding</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 shrink-0 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto min-w-[100px] justify-center gap-1.5"
+              disabled={disabled}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); onViewLedger(); }}
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              View ledger
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full sm:w-auto min-w-[80px] justify-center gap-1.5"
+              disabled={disabled}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+            >
+              <Edit className="h-3.5 w-3.5" aria-hidden="true" />
+              Edit
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="w-full sm:w-auto min-w-[80px] justify-center gap-1.5"
+              disabled={disabled}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function CustomerForm({
+  mode,
+  customer,
+  customers,
+  nameInput,
+  phoneInput,
+  nameError,
+  onNameChange,
+  onPhoneChange,
+  onSubmit,
+  onCancel,
+  disabled,
+  saving,
+  nameFieldRef,
+}: {
+  mode: 'create' | 'edit';
+  customer: Customer | undefined;
+  customers: Customer[];
+  nameInput: string;
+  phoneInput: string;
+  nameError: string;
+  onNameChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+  disabled: boolean;
+  saving: boolean;
+  nameFieldRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  useEffect(() => {
+    nameFieldRef.current?.focus();
+  }, [nameFieldRef]);
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="space-y-4 rounded-lg border border-forest/15 bg-beige-light p-4 sm:p-5"
+      onKeyDown={e => {
+        if (e.key !== 'Escape' || disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+      }}
+    >
+      <div>
+        <h3 className="font-semibold text-forest">{mode === 'create' ? 'Add customer' : 'Edit customer'}</h3>
+        {mode === 'edit' && customer && (
+          <p className="mt-1 text-xs text-muted">Editing {customer.name} · Customer ID {customer.id}</p>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="customer-name-input" className="text-sm font-medium text-forest">
+          Customer name <span aria-hidden="true">*</span>
+        </label>
+        <input
+          ref={nameFieldRef}
+          id="customer-name-input"
+          name="name"
+          required
+          autoComplete="off"
+          value={nameInput}
+          onChange={e => onNameChange(e.target.value)}
+          className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+          disabled={disabled}
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="customer-phone-input" className="text-sm font-medium text-forest">
+          Phone number <span className="font-normal text-muted">(optional)</span>
+        </label>
+        <input
+          id="customer-phone-input"
+          name="phone"
+          type="tel"
+          autoComplete="off"
+          value={phoneInput}
+          onChange={e => onPhoneChange(e.target.value)}
+          className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+          disabled={disabled}
+        />
+      </div>
+
+      {nameError && <p role="alert" className="text-sm text-forest-dark">{nameError}</p>}
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button type="submit" disabled={disabled || saving} className="min-w-[140px]">
+          {saving ? 'Saving…' : mode === 'create' ? 'Save customer' : 'Save changes'}
+        </Button>
+        <Button type="button" variant="outline" disabled={disabled} onClick={onCancel} className="min-w-[100px]">
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DeleteConfirmation({
+  customer,
+  onConfirm,
+  onCancel,
+  disabled,
+  deleting,
+}: {
+  customer: Customer;
+  onConfirm: () => void;
+  onCancel: () => void;
+  disabled: boolean;
+  deleting: boolean;
+}) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelButtonRef.current?.focus();
+  }, []);
+
+  return (
+    <section
+      role="dialog"
+      aria-labelledby="delete-customer-title"
+      aria-describedby="delete-customer-identity delete-customer-warning"
+      className="space-y-4 rounded-lg border border-forest/20 bg-beige-light p-4 sm:p-5 text-forest"
+      onKeyDown={e => {
+        if (e.key !== 'Escape' || disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+      }}
+    >
+      <div>
+        <h3 id="delete-customer-title" className="font-semibold text-forest">Delete this customer?</h3>
+        <p id="delete-customer-identity" className="mt-1 break-words text-sm">
+          {customer.name}{customer.phone ? ` · ${customer.phone}` : ''}
+          <span className="block text-xs text-muted">Customer ID {customer.id}</span>
+        </p>
+      </div>
+      <p id="delete-customer-warning" className="text-sm text-muted">
+        This removes the customer from the active list. Existing transaction history is retained,
+        but the customer ledger may no longer be available. Check the balance before continuing.
+      </p>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={disabled || deleting}
+          onClick={onConfirm}
+          className="min-w-[140px]"
+        >
+          {deleting ? 'Deleting…' : 'Delete customer'}
+        </Button>
+        <Button
+          ref={cancelButtonRef}
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          onClick={onCancel}
+          className="min-w-[100px]"
+        >
+          Cancel
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-muted">
+      <Users className="h-10 w-10 opacity-50 mb-3" />
+      <p className="text-base font-medium text-forest">No customers yet</p>
+      <p className="mt-1 text-sm text-muted">Add your first customer to get started</p>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <p role="status" className="flex min-h-28 items-center justify-center text-sm text-muted">
+      Loading customers…
+    </p>
+  );
+}
+
+function ErrorState({ retry }: { retry: () => void }) {
+  return (
+    <div className="flex min-h-28 items-center justify-center">
+      <PanelError panel="customers" retry={retry} />
+    </div>
+  );
+}
+
+function NoResultsState() {
+  return (
+    <p role="status" className="min-h-28 py-4 text-center text-sm text-muted">
+      No customers match that name or phone number. Try a different name or number.
+    </p>
+  );
+}
+
+function MutationWarning({
+  message,
+  onRefresh,
+  onAcknowledge,
+  disabled,
+}: {
+  message: string;
+  onRefresh: () => void;
+  onAcknowledge: () => void;
+  disabled: boolean;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      className="space-y-3 rounded-lg border border-forest/20 bg-beige-light p-4 text-sm text-forest focus-visible:outline-2 focus-visible:outline-forest"
+      role="group"
+      aria-labelledby="customer-mutation-warning"
+    >
+      <p id="customer-mutation-warning">{message}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" disabled={disabled} onClick={onRefresh}>
+          Refresh customer list
+        </Button>
+        <Button type="button" variant="outline" onClick={onAcknowledge}>
+          I understand; allow changes
+        </Button>
+      </div>
+      <p className="text-xs text-muted">
+        Acknowledging does not confirm whether the change completed. It only unlocks actions;
+        do not repeat the original request until you have checked the customer details.
+      </p>
+    </div>
+  );
+}
+
+function NoticeBanner({ message, error, onDismiss }: {
+  message: string;
+  error: boolean;
+  onDismiss?: () => void;
+}) {
+  if (!message) return null;
+  return (
+    <div className="rounded-lg border p-3 text-sm text-forest" role={error ? 'alert' : 'status'}>
+      <div className={`flex items-start gap-2 ${error ? 'border-forest/15 bg-beige-light' : 'border-forest/10 bg-white'}`}>
+        <span className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-xs font-medium">
+          {error ? '!' : '✓'}
+        </span>
+        <p className="flex-1">{message}</p>
+        {onDismiss && (
+          <Button type="button" variant="ghost" size="sm" className="shrink-0 p-1" onClick={onDismiss} aria-label="Dismiss">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CustomersPage() {
   const { selectedBusiness, financialOperationStatus, setFinancialOperationStatus } = useAuth();
   const router = useRouter();
@@ -143,10 +539,7 @@ export default function CustomersPage() {
   const mutationLock = useRef(false);
   const addCustomerTrigger = useRef<HTMLButtonElement>(null);
   const customerActionTrigger = useRef<HTMLButtonElement | null>(null);
-  const customerNameField = useRef<HTMLInputElement>(null);
-  const deleteCancelButton = useRef<HTMLButtonElement>(null);
-  const uncertainPanel = useRef<HTMLDivElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
+  const customerNameField = useRef<HTMLInputElement | null>(null);
   const customers = customerState.data ?? [];
 
   const { filteredCustomers, customerNameCounts } = useMemo(() => {
@@ -174,11 +567,9 @@ export default function CustomersPage() {
   }, [customerEditor]);
 
   useEffect(() => {
-    if (deleteTarget) deleteCancelButton.current?.focus();
-  }, [deleteTarget]);
-
-  useEffect(() => {
-    if (mutationUncertain) uncertainPanel.current?.focus();
+    if (mutationUncertain) {
+      // Focus is handled by MutationWarning component
+    }
   }, [mutationUncertain]);
 
   const acknowledgeUncertainMutation = () => {
@@ -188,6 +579,7 @@ export default function CustomersPage() {
     setFinancialOperationStatus('idle');
     setCustomerFormError('');
     setCustomerNotice('The previous request was not repeated. Check the current customer details before making the same change again.');
+    setCustomerNoticeError(false);
     setDeleteTarget(null);
     setCustomerEditor(null);
     restoreCustomerActionFocus();
@@ -284,7 +676,8 @@ export default function CustomersPage() {
         body: JSON.stringify(updates),
       }, current.id);
       if (outcome === 'success') {
-        closeCustomerForm(false);
+        setCustomerEditor(null);
+        setCustomerFormError('');
         restoreCustomerActionFocus();
         setCustomerNotice('Customer details updated.');
       }
@@ -299,7 +692,8 @@ export default function CustomersPage() {
       body: JSON.stringify(payload),
     });
     if (outcome === 'success') {
-      closeCustomerForm(false);
+      setCustomerEditor(null);
+      setCustomerFormError('');
       restoreCustomerActionFocus();
       setCustomerNotice('Customer request completed. The customer list has been refreshed.');
     }
@@ -340,7 +734,7 @@ export default function CustomersPage() {
     if (outcome === 'success') {
       setDeleteTarget(null);
       setCustomerNotice(`${target.name} was deleted.`);
-      window.requestAnimationFrame(() => focusInView(addCustomerTrigger.current));
+      window.requestAnimationFrame(() => addCustomerTrigger.current?.focus());
     } else if (outcome === 'definite-error') {
       setDeleteTarget(null);
       restoreCustomerActionFocus();
@@ -362,179 +756,127 @@ export default function CustomersPage() {
 
   const clearSearch = () => {
     updateSearch('');
-    searchInput.current?.focus();
   };
+
+  const isMutating = mutationPending || mutationUncertain || financialOperationStatus !== 'idle';
 
   return (
     <DashboardAccessBoundary>
-      <div className="mx-auto w-full max-w-[1200px] min-w-0 space-y-5 px-4 py-6 sm:space-y-7 sm:px-6 sm:py-8">
-        <div className="min-w-0 break-words">
-          <h1 className="text-3xl font-bold text-forest tracking-tight">Customers</h1>
-          <p className="mt-1 text-sm text-muted">Manage customers for {selectedBusiness?.businessName}</p>
-        </div>
+      <div className="mx-auto w-full max-w-[1200px] min-w-0 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
+        {/* Page Header */}
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between min-w-0 break-words">
+          <div>
+            <h1 className="text-3xl font-bold text-forest tracking-tight">Customers</h1>
+            <p className="mt-1 text-sm text-muted">Manage customers for {selectedBusiness?.businessName}</p>
+          </div>
+          <Button
+            ref={addCustomerTrigger}
+            type="button"
+            size="sm"
+            className="shrink-0 w-full sm:w-auto min-h-11"
+            disabled={isMutating}
+            onClick={openCreateCustomer}
+          >
+            <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+            Add customer
+          </Button>
+        </header>
 
-        <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
-          <CardHeader className="flex-row items-center justify-between gap-3 px-0 pt-0">
-            <CardTitle tabIndex={-1} className="text-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest">All customers</CardTitle>
-            <Button ref={addCustomerTrigger} type="button" size="sm" className="shrink-0" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={openCreateCustomer}>
-              <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
-              Add customer
-            </Button>
-          </CardHeader>
-          <CardContent className="px-0 pb-0">
-            <div className="space-y-3">
-              {customerNotice && !mutationUncertain && !(customerEditor && customerFormError) && <p role={customerNoticeError ? 'alert' : 'status'} className="rounded-md border border-forest/10 bg-beige-light p-3 text-sm text-forest">{customerNotice}</p>}
+        {/* Customer Overview Section */}
+        <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white shadow-card">
+          <div className="p-4 sm:p-5">
+            {/* Section Header */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <h2 className="text-lg font-semibold text-forest">All customers</h2>
+              <Button
+                ref={addCustomerTrigger}
+                type="button"
+                size="sm"
+                className="shrink-0 w-full sm:w-auto min-h-11"
+                disabled={isMutating}
+                onClick={openCreateCustomer}
+              >
+                <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
+                Add customer
+              </Button>
+            </div>
+
+            {/* Search */}
+            <SearchInput
+              value={customerSearch}
+              onChange={updateSearch}
+              onClear={clearSearch}
+              placeholder="Search by customer name or phone"
+              autoFocus={!customers.length && !customerEditor && !deleteTarget}
+            />
+
+            {/* Content */}
+            <div className="mt-4 space-y-3">
+              <NoticeBanner message={customerNotice} error={customerNoticeError} onDismiss={() => setCustomerNotice('')} />
+
               {mutationUncertain && (
-                <div ref={uncertainPanel} tabIndex={-1} className="space-y-3 rounded-md border border-forest/20 bg-beige-light p-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-forest" role="group" aria-labelledby="customer-mutation-warning">
-                  <p id="customer-mutation-warning">{customerNotice}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" disabled={mutationPending} onClick={() => { void loadCustomers(); }}>Refresh customer list</Button>
-                    <Button type="button" variant="outline" onClick={acknowledgeUncertainMutation}>I understand; allow changes</Button>
-                  </div>
-                  <p className="text-xs">Acknowledging does not confirm whether the change completed. It only unlocks actions; do not repeat the original request until you have checked the customer details.</p>
-                </div>
+                <MutationWarning
+                  message={customerNotice}
+                  onRefresh={() => void loadCustomers()}
+                  onAcknowledge={acknowledgeUncertainMutation}
+                  disabled={mutationPending}
+                />
               )}
+
               {customerEditor && (
-                <form
-                  aria-labelledby="customer-form-title"
-                  className="space-y-3 rounded-lg border border-forest/15 bg-beige-light p-4"
+                <CustomerForm
+                  mode={customerEditor.mode}
+                  customer={customerEditor.mode === 'edit' ? customers.find(c => c.id === customerEditor.customerId) : undefined}
+                  customers={customers}
+                  nameInput={customerNameInput}
+                  phoneInput={customerPhoneInput}
+                  nameError={customerFormError}
+                  onNameChange={setCustomerNameInput}
+                  onPhoneChange={setCustomerPhoneInput}
                   onSubmit={saveCustomer}
-                  onKeyDown={event => {
-                    if (event.key !== 'Escape' || mutationPending) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    closeCustomerForm();
-                  }}
-                >
-                  <div>
-                    <h3 id="customer-form-title" className="font-semibold text-forest">{customerEditor.mode === 'create' ? 'Add customer' : 'Edit customer'}</h3>
-                    {customerEditor.mode === 'edit' && (() => {
-                      const customer = customers.find(item => item.id === customerEditor.customerId);
-                      return customer ? <p className="mt-1 text-xs text-muted">Editing {customer.name} · Customer ID {customer.id}</p> : null;
-                    })()}
-                  </div>
-                  <div className="space-y-1">
-                    <label htmlFor="customer-name-input" className="text-sm font-medium text-forest">Customer name <span aria-hidden="true">*</span></label>
-                    <input ref={customerNameField} id="customer-name-input" name="name" required autoComplete="off" value={customerNameInput} onChange={event => setCustomerNameInput(event.target.value)} aria-describedby={mutationUncertain ? 'customer-mutation-warning' : customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
-                  </div>
-                  <div className="space-y-1">
-                    <label htmlFor="customer-phone-input" className="text-sm font-medium text-forest">Phone number <span className="font-normal text-muted">(optional)</span></label>
-                    <input id="customer-phone-input" name="phone" type="tel" autoComplete="off" value={customerPhoneInput} onChange={event => setCustomerPhoneInput(event.target.value)} aria-describedby={mutationUncertain ? 'customer-mutation-warning' : customerFormError ? 'customer-form-error' : undefined} className="min-h-11 w-full rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
-                  </div>
-                  {customerFormError && !mutationUncertain && <p id="customer-form-error" role="alert" className="text-sm text-forest-dark">{customerFormError}</p>}
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="submit" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'}>{mutationPending ? 'Saving…' : customerEditor.mode === 'create' ? 'Save customer' : 'Save changes'}</Button>
-                    <Button type="button" variant="outline" disabled={mutationPending} onClick={() => closeCustomerForm()}>Cancel</Button>
-                  </div>
-                </form>
+                  onCancel={() => closeCustomerForm()}
+                  disabled={isMutating}
+                  saving={mutationPending}
+                  nameFieldRef={customerNameField}
+                />
               )}
+
               {deleteTarget && (
-                <section role="dialog" aria-labelledby="delete-customer-title" aria-describedby="delete-customer-identity delete-customer-warning" className="space-y-3 rounded-lg border border-forest/20 bg-beige-light p-4 text-forest" onKeyDown={event => {
-                  if (event.key !== 'Escape' || mutationPending) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setDeleteTarget(null);
-                  restoreCustomerActionFocus();
-                }}>
-                  <div>
-                    <h3 id="delete-customer-title" className="font-semibold">Delete this customer?</h3>
-                    <p id="delete-customer-identity" className="mt-1 break-words text-sm">{deleteTarget.name}{deleteTarget.phone ? ` · ${deleteTarget.phone}` : ''}<span className="block text-xs">Customer ID {deleteTarget.id}</span></p>
-                  </div>
-                  <p id="delete-customer-warning" className="text-sm">This removes the customer from the active list. Existing transaction history is retained, but the customer ledger may no longer be available. Check the balance before continuing.</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="destructive" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={() => { void deleteCustomer(); }}>{mutationPending ? 'Deleting…' : 'Delete customer'}</Button>
-                    <Button ref={deleteCancelButton} type="button" variant="outline" disabled={mutationPending} onClick={() => { setDeleteTarget(null); restoreCustomerActionFocus(); }}>Cancel</Button>
-                  </div>
-                </section>
+                <DeleteConfirmation
+                  customer={deleteTarget}
+                  onConfirm={deleteCustomer}
+                  onCancel={() => { setDeleteTarget(null); restoreCustomerActionFocus(); }}
+                  disabled={isMutating}
+                  deleting={mutationPending}
+                />
               )}
-              {customers.length > 0 && (
-                <div className="space-y-1">
-                  <label htmlFor="customer-search" className="text-sm font-medium text-forest">Search customers</label>
-                  <div className="relative">
-                    <input
-                      ref={searchInput}
-                      id="customer-search"
-                      type="search"
-                      value={customerSearch}
-                      autoComplete="off"
-                      placeholder="Name or phone number"
-                      onChange={event => updateSearch(event.target.value)}
-                      onKeyDown={event => {
-                        if (event.key !== 'Escape' || !customerSearch) return;
-                        event.preventDefault();
-                        clearSearch();
-                      }}
-                      className="block min-h-11 w-full rounded-sm border border-forest/60 bg-white py-2 pl-3 pr-16 text-base text-forest placeholder:text-muted focus:border-forest focus:outline-2 focus:outline-offset-2 focus:outline-forest [&::-webkit-search-cancel-button]:hidden"
-                    />
-                    {customerSearch && (
-                      <Button type="button" variant="link" size="sm" aria-label="Clear search" onClick={clearSearch} className="absolute inset-y-0 right-0">
-                        <X className="h-4 w-4 mr-2" aria-hidden="true" />
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {customerState.status === 'loading' && customers.length > 0 && <p role="status" className="text-sm text-muted">Updating customers. Showing last loaded information.</p>}
-              {customerState.status === 'error' && customers.length > 0 && <PanelError panel="customers" retry={loadCustomers} message={customerState.message} />}
-              {customerState.status === 'loading' && !customers.length ? (
-                <p role="status" className="flex min-h-28 items-center justify-center text-sm text-muted">Loading customers…</p>
-              ) : customerState.status === 'error' && !customers.length ? (
-                <div className="flex min-h-28 items-center justify-center">
-                  <PanelError panel="customers" retry={loadCustomers} message={customerState.message} />
-                </div>
-              ) : filteredCustomers.length > 0 ? (
+
+              {customerState.status === 'loading' && !customers.length && <LoadingState />}
+              {customerState.status === 'error' && !customers.length && <ErrorState retry={loadCustomers} />}
+
+              {customers.length > 0 && filteredCustomers.length > 0 && (
                 filteredCustomers.map(customer => {
                   const duplicate = (customerNameCounts.get(customer.name.trim().toLowerCase()) ?? 0) > 1;
-                  const outstanding = formatInrAmount(customer.outstandingBalance);
                   return (
-                    <Link key={customer.id} href={`/customers/${customer.id}`} className="block">
-                      <div className="rounded-lg border border-forest/10 p-3 hover:bg-beige-light transition-colors">
-                        <div className="flex items-center justify-between gap-3 mb-1">
-                          <div className="min-w-0 break-words">
-                            <p className="font-semibold text-forest text-sm">{customer.name}</p>
-                            <p className="text-xs text-muted [overflow-wrap:anywhere]">{customer.phone || 'No phone saved'}</p>
-                            {duplicate && <p className="text-xs text-muted [overflow-wrap:anywhere]">Customer ID {customer.id}</p>}
-                          </div>
-                          <span className="shrink-0 whitespace-nowrap rounded-full bg-purple/10 px-2.5 py-0.5 text-xs font-semibold text-forest">
-                            {customer.transactionCount} txns
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-baseline gap-x-1">
-                          <span className={`min-w-0 max-w-full font-bold text-forest [overflow-wrap:anywhere] ${outstanding.length > 12 ? 'text-[clamp(0.75rem,3.5vw,1.125rem)]' : 'text-lg'}`}>{outstanding}</span>
-                          <span className="text-xs text-muted">outstanding</span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                          <Button type="button" variant="link" size="sm" className="px-0 underline" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => { event.preventDefault(); openEditCustomer(customer, event.currentTarget); }}>Edit</Button>
-                          <Button type="button" variant="link" size="sm" className="px-0 underline" disabled={mutationPending || mutationUncertain || financialOperationStatus !== 'idle'} onClick={event => { event.preventDefault(); openDeleteConfirmation(customer, event.currentTarget); }}>Delete</Button>
-                        </div>
-                      </div>
-                    </Link>
+                    <CustomerCard
+                      key={customer.id}
+                      customer={customer}
+                      duplicate={duplicate}
+                      onEdit={() => openEditCustomer(customer, customerActionTrigger.current!)}
+                      onDelete={() => openDeleteConfirmation(customer, customerActionTrigger.current!)}
+                      onViewLedger={() => {}}
+                      disabled={isMutating}
+                    />
                   );
                 })
-              ) : customers.length > 0 ? (
-                <p role="status" className="min-h-28 py-4 text-sm text-muted">No customers match that name or phone number. Try a different name or number.</p>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-muted">
-                  <Users className="h-8 w-8 opacity-50 mb-2" />
-                  <p className="text-sm">No customers yet</p>
-                  <p className="text-xs text-muted">Add your first customer to get started</p>
-                </div>
               )}
+
+              {customers.length > 0 && filteredCustomers.length === 0 && <NoResultsState />}
+              {customers.length === 0 && customerState.status === 'success' && <EmptyState />}
             </div>
-          </CardContent>
+          </div>
         </ScrollReveal>
       </div>
     </DashboardAccessBoundary>
   );
-}
-
-function focusInView(element: HTMLElement | null) {
-  if (!element) return;
-  element.focus({ preventScroll: true });
-  const { top, bottom } = element.getBoundingClientRect();
-  const topInset = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
-  if (top < topInset || bottom > window.innerHeight) {
-    element.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-  }
 }

@@ -156,22 +156,8 @@
     position: relative;
   }
 
-  .mic-motion::before {
-    border: 1px solid currentColor;
-    border-radius: inherit;
-    content: '';
-    inset: 0;
-    opacity: 0;
-    pointer-events: none;
-    position: absolute;
-    transform: scale(0.82);
-    transition:
-      opacity 240ms ease-out,
-      transform 240ms ease-out;
-  }
-
   .mic-motion svg {
-    transition: transform 200ms ease-out;
+    transition: color 200ms ease-out;
   }
 
   .arrow-motion {
@@ -285,13 +271,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 200ms ease-out;
+    transition: background-color 200ms ease-out;
     z-index: 10;
   }
 
   .voice-mic-button svg {
     color: var(--purple);
-    transition: all 200ms ease-out;
+    transition: color 200ms ease-out;
   }
 
   .voice-mic-button:focus-visible {
@@ -308,12 +294,12 @@
     box-shadow: 0 0 0 2px white;
   }
 
-  .voice-mic-button:hover:not(:disabled) svg {
-    transform: scale(1.1);
+  .voice-mic-button:hover:not(:disabled) {
+    background-color: rgba(167, 139, 206, 0.1);
   }
 
-  .voice-mic-button:active:not(:disabled) svg {
-    transform: scale(0.95);
+  .voice-mic-button:active:not(:disabled) {
+    background-color: rgba(167, 139, 206, 0.15);
   }
 
   .voice-mic-button.is-listening svg {
@@ -399,17 +385,6 @@
 
     .motion-interactive:hover .arrow-motion {
       transform: translateX(3px);
-    }
-
-    .mic-motion:hover::before,
-    .mic-motion:focus-within::before {
-      opacity: 0.38;
-      transform: scale(1.38);
-    }
-
-    .mic-motion:hover svg,
-    .mic-motion:focus-within svg {
-      transform: scale(1.08);
     }
   }
 }
