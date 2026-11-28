@@ -47,7 +47,7 @@ export function Features() {
               <p className="text-sm text-muted">Tuesday, 18 November</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 border-b border-forest/20 py-5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 min-[375px]:grid-cols-2 gap-4 border-b border-forest/20 py-5 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-muted">Sales</p>
                 <p className="mt-1 text-lg font-semibold text-forest">₹8,200</p>

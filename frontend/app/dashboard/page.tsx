@@ -1183,7 +1183,7 @@ return (
             <div className="voice-status" role="status" aria-live="polite" aria-atomic="true">
               {voicePhase === 'listening' && (
                 <div className="voice-status-listening">
-                  <VoiceWaveform animate={true} className="h-6 w-48 sm:w-64" />
+                  <VoiceWaveform animate={true} className="h-6 w-full max-w-xs sm:max-w-sm" />
                   <p className="mt-2 text-sm text-forest">Listening… speak now</p>
                 </div>
               )}
@@ -1345,7 +1345,7 @@ return (
                           variant="outline"
                           disabled={previewActionBusy !== null}
                           onClick={() => void runPreviewAction('resolve', { customerId: candidate.id })}
-                          className="min-w-[140px]"
+                          className="min-w-0 sm:min-w-[140px] flex-1 sm:flex-initial"
                         >
                           {candidate.name}{candidate.phone ? ` · ${candidate.phone}` : ''}
                         </Button>
@@ -1441,7 +1441,7 @@ return (
                   size="lg"
                   disabled={previewActionBusy !== null}
                   onClick={() => void runPreviewAction('confirm')}
-                  className="flex-1 min-w-[160px]"
+                  className="flex-1 min-w-0 sm:min-w-[140px]"
                 >
                   {previewActionBusy === 'confirm' ? (
                     <>
@@ -1459,7 +1459,7 @@ return (
                 size="lg"
                 disabled={previewActionBusy !== null}
                 onClick={clearVoicePreview}
-                className="flex-1 min-w-[160px]"
+                className="flex-1 min-w-0 sm:min-w-[140px]"
               >
                 <X className="h-4 w-4 mr-1" aria-hidden="true" />
                 Cancel
@@ -1500,7 +1500,7 @@ return (
             <PanelError panel="dashboard summary" retry={loadDashboard} focusTarget="financial-summary" retained={Boolean(summary)} message={summaryState.message} />
           </div>
         )}
-        <ScrollReveal className="grid grid-cols-1 gap-3 min-[375px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+        <ScrollReveal className="grid grid-cols-1 gap-3 min-[375px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {statCards.map((card) => {
             const amount = formatInrAmount(summary?.[card.key]);
             const compactAmount = amount.length > 12;
@@ -1701,7 +1701,7 @@ return (
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="min-w-[105px]"
+                          className="min-w-0 sm:min-w-[105px]"
                           aria-label={`View ledger for ${customer.name}${customer.phone ? `, ${customer.phone}` : ''}${duplicate ? `, customer ID ${customer.id}` : ''}`}
                           aria-expanded={isOpen}
                           aria-controls={isOpen ? `customer-ledger-${customer.id}` : undefined}

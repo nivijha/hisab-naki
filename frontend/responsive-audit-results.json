@@ -1,0 +1,722 @@
+[
+  {
+    "viewport": "Small mobile",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-small-mobile.png"
+  },
+  {
+    "viewport": "Small mobile",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-small-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-standard-mobile.png"
+  },
+  {
+    "viewport": "Standard mobile",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-standard-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-large-mobile.png"
+  },
+  {
+    "viewport": "Large mobile",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-large-mobile.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-small-tablet.png"
+  },
+  {
+    "viewport": "Small tablet",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-small-tablet.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet portrait",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-tablet-portrait.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-tablet-landscape.png"
+  },
+  {
+    "viewport": "Tablet landscape",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-tablet-landscape.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-small-laptop.png"
+  },
+  {
+    "viewport": "Small laptop",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-small-laptop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-standard-desktop.png"
+  },
+  {
+    "viewport": "Standard desktop",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-standard-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Landing page",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/landing-page-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Login",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/login-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Signup",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/signup-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Business select",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/business-select-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Dashboard",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/dashboard-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Customers",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/customers-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Transactions",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/transactions-large-desktop.png"
+  },
+  {
+    "viewport": "Large desktop",
+    "page": "Profile",
+    "status": "PASS",
+    "overflow": false,
+    "bodyOverflow": false,
+    "overflowCount": 0,
+    "screenshot": "screenshots/profile-large-desktop.png"
+  }
+]

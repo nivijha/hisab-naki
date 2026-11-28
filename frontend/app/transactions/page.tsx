@@ -205,15 +205,15 @@ function LoadingState() {
       {Array.from({ length: 5 }).map((_, i) => (
         <li key={i} className="flex min-w-0 flex-col items-stretch gap-3 rounded-[12px] border border-forest/5 bg-white p-4 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-4 w-48 animate-pulse rounded bg-forest/5" />
-            <div className="h-3 w-64 animate-pulse rounded bg-forest/5" />
+            <div className="h-4 w-full max-w-xs animate-pulse rounded bg-forest/5" />
+            <div className="h-3 w-full max-w-md animate-pulse rounded bg-forest/5" />
           </div>
-<div className="flex min-w-0 max-w-full flex-col items-stretch justify-between gap-2 sm:w-[45%] sm:max-w-[45%] sm:shrink-0 sm:flex-row sm:items-end sm:text-right">
+          <div className="flex min-w-0 max-w-full flex-col items-stretch justify-between gap-2 sm:max-w-[45%] sm:shrink-0 sm:flex-row sm:items-end sm:text-right">
             <div className="flex items-center justify-between gap-3">
-              <div className="h-6 w-32 animate-pulse rounded bg-forest/5" />
-              <div className="h-5 w-20 animate-pulse rounded bg-forest/5" />
+              <div className="h-6 w-full max-w-xs animate-pulse rounded bg-forest/5" />
+              <div className="h-5 w-full max-w-xs animate-pulse rounded bg-forest/5" />
             </div>
-            <div className="h-3 w-20 animate-pulse rounded bg-forest/5 self-end" />
+            <div className="h-3 w-full max-w-xs animate-pulse rounded bg-forest/5 self-end" />
           </div>
         </li>
       ))}

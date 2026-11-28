@@ -49,7 +49,7 @@ export function Hero() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 py-5 sm:grid-cols-3">
+              <div className="grid grid-cols-1 min-[375px]:grid-cols-2 gap-3 py-5 sm:grid-cols-3">
                 <div className="col-span-2 border-l-2 border-purple pl-3 sm:col-span-1">
                   <p className="text-xs text-muted">Outstanding</p>
                   <p className="mt-1 text-2xl font-semibold tracking-tight">₹18,450</p>

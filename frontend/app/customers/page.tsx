@@ -344,10 +344,10 @@ function CustomerForm({
       {nameError && <p role="alert" className="text-sm text-forest-dark">{nameError}</p>}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <Button type="submit" disabled={disabled || saving} className="min-w-[140px]">
+        <Button type="submit" disabled={disabled || saving} className="min-w-0 sm:min-w-[140px] flex-1 sm:flex-initial">
           {saving ? 'Saving…' : mode === 'create' ? 'Save customer' : 'Save changes'}
         </Button>
-        <Button type="button" variant="outline" disabled={disabled} onClick={onCancel} className="min-w-[100px]">
+        <Button type="button" variant="outline" disabled={disabled} onClick={onCancel} className="min-w-0 sm:min-w-[100px] flex-1 sm:flex-initial">
           Cancel
         </Button>
       </div>
@@ -404,7 +404,7 @@ function DeleteConfirmation({
           variant="destructive"
           disabled={disabled || deleting}
           onClick={onConfirm}
-          className="min-w-[140px]"
+          className="min-w-0 sm:min-w-[140px] flex-1 sm:flex-initial"
         >
           {deleting ? 'Deleting…' : 'Delete customer'}
         </Button>
@@ -414,7 +414,7 @@ function DeleteConfirmation({
           variant="outline"
           disabled={disabled}
           onClick={onCancel}
-          className="min-w-[100px]"
+          className="min-w-0 sm:min-w-[100px] flex-1 sm:flex-initial"
         >
           Cancel
         </Button>
