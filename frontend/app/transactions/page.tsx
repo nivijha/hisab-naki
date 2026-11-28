@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Filter, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { ScrollReveal } from '@/components/ui/scroll-reveal';
 import { DashboardAccessBoundary } from '@/components/auth/dashboard-access-boundary';
 import { useAuth } from '@/components/auth/auth-provider';
@@ -208,7 +208,7 @@ function LoadingState() {
             <div className="h-4 w-48 animate-pulse rounded bg-forest/5" />
             <div className="h-3 w-64 animate-pulse rounded bg-forest/5" />
           </div>
-          <div className="flex min-w-0 max-w-full flex-col items-stretch justify-between gap-2 sm:max-w-[45%] sm:shrink-0 sm:flex-row sm:items-end sm:text-right">
+<div className="flex min-w-0 max-w-full flex-col items-stretch justify-between gap-2 sm:w-[45%] sm:max-w-[45%] sm:shrink-0 sm:flex-row sm:items-end sm:text-right">
             <div className="flex items-center justify-between gap-3">
               <div className="h-6 w-32 animate-pulse rounded bg-forest/5" />
               <div className="h-5 w-20 animate-pulse rounded bg-forest/5" />
@@ -483,7 +483,7 @@ function TransactionHistoryPage() {
         </header>
 
         <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white shadow-card">
-          <CardHeader className="px-4 py-4 sm:px-5 sm:py-4 border-b border-forest/10">
+          <div className="px-4 py-4 sm:px-5 sm:py-4 border-b border-forest/10">
             <FilterSection
               showFilters={showFilters}
               setShowFilters={setShowFilters}
@@ -496,8 +496,8 @@ function TransactionHistoryPage() {
               handleFilterChange={handleFilterChange}
               handleResetFilters={handleResetFilters}
             />
-          </CardHeader>
-          <CardContent className="px-4 py-4 sm:px-5 sm:py-5">
+          </div>
+          <div className="px-4 py-4 sm:px-5 sm:py-5">
             {state.status === 'loading' && !history && (
               <LoadingState />
             )}
@@ -530,7 +530,7 @@ function TransactionHistoryPage() {
                 <Pagination history={history} filters={filters} handlePageChange={handlePageChange} state={state} />
               </>
             )}
-          </CardContent>
+          </div>
         </ScrollReveal>
       </div>
     </DashboardAccessBoundary>

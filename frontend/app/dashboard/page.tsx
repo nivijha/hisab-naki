@@ -1138,14 +1138,16 @@ export default function DashboardPage() {
   ) : null;
 
 return (
-    <div className="min-w-0 space-y-6 sm:space-y-8">
-      <div className="min-w-0 break-words">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted">Daily ledger</p>
-        <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold leading-tight tracking-tight text-forest">{selectedBusiness?.businessName || summary?.businessName || 'Dashboard'}</h1>
-        <p className="mt-1 text-sm leading-6 text-muted">Voice-first digital ledger</p>
-      </div>
+    <div className="mx-auto max-w-[1200px] min-w-0 space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
+      <header className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted">Daily ledger</p>
+          <h1 className="text-[clamp(1.75rem,4vw,2.25rem)] font-bold leading-tight tracking-tight text-forest">{selectedBusiness?.businessName || summary?.businessName || 'Dashboard'}</h1>
+          <p className="text-sm leading-6 text-muted">Voice-first digital ledger</p>
+        </div>
+      </header>
 
-      <ScrollReveal className="break-words rounded-[14px] border border-forest/10 bg-white px-4 py-5 shadow-card sm:px-6 sm:py-6">
+      <ScrollReveal className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
         <div className="text-center">
           <h2 id="voice-input" className="sr-only">Voice input</h2>
 
@@ -1563,7 +1565,7 @@ return (
         )}
       </section>
 
-      <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <ScrollReveal delay={0.1} className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
           <CardHeader className="flex-row items-center justify-between gap-3 px-0 pt-0">
             <CardTitle id="customers" tabIndex={-1} className="text-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest">Customers</CardTitle>
@@ -1738,83 +1740,83 @@ return (
 
         <ScrollReveal delay={0.2} className="min-w-0 rounded-[14px] border border-forest/10 bg-white p-4 shadow-card sm:p-5">
           <CardHeader className="px-0 pt-0">
-            <div className="flex flex-wrap items-center justify-between gap-x-3">
-              <div className="flex items-center gap-3">
-                <CardTitle id="recent-transactions" tabIndex={-1} className="text-lg">Recent transactions</CardTitle>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-x-3 sm:gap-y-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <CardTitle id="recent-transactions" tabIndex={-1} className="text-lg truncate">Recent transactions</CardTitle>
                 <Link
                   href="/transactions"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-forest underline underline-offset-2 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-forest underline underline-offset-2 hover:text-forest-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest shrink-0"
                   aria-label="View all transactions"
                 >
                   <ArrowRight className="h-3 w-3" aria-hidden="true" />
                   View all
                 </Link>
               </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <Button ref={manualEntryTrigger} type="button" variant="link" size="sm" className="px-0 underline" aria-expanded={manualEntryOpen} aria-controls={manualEntryOpen ? 'manual-entry' : undefined} onClick={() => manualEntryOpen ? cancelManualEntry() : startManualEntry()}>
-                  {manualEntryOpen ? 'Close manual entry' : 'Prepare manual entry'}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button ref={manualEntryTrigger} type="button" variant="link" size="sm" className="px-0 underline shrink-0" aria-expanded={manualEntryOpen} aria-controls={manualEntryOpen ? 'manual-entry' : undefined} onClick={() => manualEntryOpen ? cancelManualEntry() : startManualEntry()}>
+                  {manualEntryOpen ? 'Close' : 'Manual entry'}
                 </Button>
                 <Button
                   ref={historyTrigger}
                   type="button"
                   variant="link"
                   size="sm"
-                  className="px-0 underline"
+                  className="px-0 underline shrink-0"
                   aria-expanded={showHistory}
                   aria-controls={showHistory ? 'transaction-history' : undefined}
                   onClick={event => showHistory ? closeHistory() : openHistory(event.currentTarget)}
                 >
-                  {showHistory ? 'Hide history' : 'View history'}
+                  {showHistory ? 'Hide' : 'History'}
                 </Button>
               </div>
             </div>
           </CardHeader>
           <CardContent className="px-0 pb-0">
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {manualEntryOpen && (
-                <section id="manual-entry" aria-labelledby={manualReview ? 'manual-entry-review-title' : 'manual-entry-title'} className="min-w-0 space-y-3 rounded-[10px] border border-forest/15 bg-beige-light p-3 sm:p-4" onKeyDown={event => {
+                <section id="manual-entry" aria-labelledby={manualReview ? 'manual-entry-review-title' : 'manual-entry-title'} className="min-w-0 space-y-2.5 rounded-[10px] border border-forest/15 bg-beige-light p-2.5 sm:p-3" onKeyDown={event => {
                   if (event.key !== 'Escape') return;
                   event.preventDefault();
                   event.stopPropagation();
                   cancelManualEntry();
                 }}>
                   {!manualReview ? (
-                    <form onSubmit={openManualReview} className="space-y-3">
+                    <form onSubmit={openManualReview} className="space-y-2.5">
                       <div>
                         <h3 id="manual-entry-title" className="font-semibold text-forest">Prepare a manual entry</h3>
-                        <p className="mt-1 text-xs leading-5 text-muted">This form prepares a review. It does not directly record or submit a financial transaction.</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted">This form prepares a review. It does not directly record or submit a financial transaction.</p>
                       </div>
-                      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="min-w-0 space-y-1">
+                      <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      <div className="min-w-0 space-y-0.5">
                         <label htmlFor="manual-transaction-type" className="text-sm font-medium text-forest">Transaction type</label>
-                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
+                        <select ref={manualTypeField} id="manual-transaction-type" value={manualType} onChange={event => { setManualType(event.target.value as typeof manualType); setManualError(''); }} className="min-h-10 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">
                           <option value="CREDIT">Credit</option>
                           <option value="PAYMENT">Payment</option>
                           <option value="SALE">Sale</option>
                           <option value="EXPENSE">Expense</option>
                         </select>
                       </div>
-                      <div className="min-w-0 space-y-1">
+                      <div className="min-w-0 space-y-0.5">
                         <label htmlFor="manual-customer" className="text-sm font-medium text-forest">Customer {manualType === 'CREDIT' || manualType === 'PAYMENT' ? <span aria-hidden="true">*</span> : <span className="font-normal text-muted">(optional)</span>}</label>
-                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
+                        <select id="manual-customer" value={manualCustomerId} onChange={event => { setManualCustomerId(event.target.value); setManualError(''); }} disabled={customerState.status !== 'success' || customers.length === 0} className="min-h-10 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest disabled:opacity-60">
                           <option value="">{customerState.status === 'loading' ? 'Loading customers…' : customers.length ? 'Select a customer' : 'No customers available'}</option>
                           {customers.map(customer => <option key={customer.id} value={customer.id}>{customer.name} · {customer.id}</option>)}
                         </select>
                       </div>
-                      <div className="min-w-0 space-y-1">
+                      <div className="min-w-0 space-y-0.5">
                         <label htmlFor="manual-amount" className="text-sm font-medium text-forest">Amount (₹)</label>
-                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-11 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <input id="manual-amount" type="text" inputMode="decimal" autoComplete="off" value={manualAmount} onChange={event => { setManualAmount(event.target.value); setManualError(''); }} aria-describedby="manual-amount-guidance" className="min-h-10 w-full min-w-0 rounded-sm border border-forest/60 bg-white px-3 text-sm text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                         <p id="manual-amount-guidance" className="text-xs text-muted">Positive amount; up to two decimal places. No rounding is applied in this review.</p>
                       </div>
-                      <div className="min-w-0 space-y-1">
+                      <div className="min-w-0 space-y-0.5 sm:col-span-2">
                         <label htmlFor="manual-description" className="text-sm font-medium text-forest">Description <span className="font-normal text-muted">(optional)</span></label>
-                        <textarea id="manual-description" rows={2} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full min-w-0 resize-y rounded-sm border border-forest/60 bg-white px-3 py-2 text-base text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
+                        <textarea id="manual-description" rows={1} value={manualDescription} onChange={event => setManualDescription(event.target.value)} className="w-full min-w-0 resize-y rounded-sm border border-forest/60 bg-white px-3 py-1.5 text-sm text-forest focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest" />
                       </div>
                       </div>
                       {manualError && <p role="alert" className="text-sm text-forest-dark">{manualError}</p>}
                       <div className="flex flex-wrap gap-2">
-                        <Button type="submit">Review details</Button>
-                        <Button type="button" variant="outline" onClick={cancelManualEntry}>Cancel draft</Button>
+                        <Button type="submit" size="sm">Review details</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={cancelManualEntry}>Cancel draft</Button>
                       </div>
                     </form>
                   ) : (
